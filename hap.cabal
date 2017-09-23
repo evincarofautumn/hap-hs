@@ -13,6 +13,18 @@ build-type:          Simple
 cabal-version:       >=1.10
 extra-source-files:  README.md
 
+library
+  hs-source-dirs:      lib
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+  exposed-modules:     Hap.Language
+                     , Hap.Operators
+                     , Hap.Runtime
+  build-depends:       base >= 4.7 && < 5
+                     , containers
+                     , parsec
+                     , text
+
 executable hap
   hs-source-dirs:      src
   main-is:             Main.hs
@@ -20,6 +32,18 @@ executable hap
   ghc-options:         -Wall
   build-depends:       base >= 4.7 && < 5
                      , containers
+                     , hap
                      , haskeline
                      , parsec
                      , text
+
+test-suite hap-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+  build-depends:       base >= 4.7 && < 5
+                     , HUnit
+                     , hap
+                     , hspec
