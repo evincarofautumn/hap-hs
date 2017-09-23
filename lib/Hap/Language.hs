@@ -32,7 +32,7 @@ import Data.Text (Text)
 import GHC.Exts (IsString(..))
 import Hap.Operators
 import Hap.Runtime (Env)
-import Text.Parsec (ParseError)
+import Text.Parsec (ParseError, (<?>))
 import Text.Parsec.Expr (buildExpressionParser)
 import Text.Parsec.Pos (SourcePos)
 import Text.Parsec.String (Parser)
@@ -59,7 +59,7 @@ data Statement
   | ExpressionStatement !SourcePos !Expression
   | ForAllStatement !SourcePos !Identifier !Expression !Statement
   | ForEachStatement !SourcePos !Identifier !Expression !Statement
-  | FunctionStatement !SourcePos !Identifier [(Identifier, Maybe Signature)] Statement
+  | FunctionStatement !SourcePos !Identifier [(Identifier, Maybe Signature, Maybe Expression)] !(Maybe Signature) !Statement
   | IfStatement !SourcePos !Expression !Statement !(Maybe Statement)
   | LastStatement !SourcePos !(Maybe Identifier)
   | NextStatement !SourcePos !(Maybe Identifier)
@@ -96,6 +96,7 @@ data Literal
   | ListLiteral [Expression]
   | MapLiteral [(Expression, Expression)]
   | SetLiteral [Expression]
+  | FunctionLiteral !(Maybe Identifier) [(Identifier, Maybe Signature, Maybe Expression)] !(Maybe Signature) !Statement
   deriving (Eq, Show)
 
 data UnaryOperator
@@ -126,6 +127,7 @@ data BinaryOperator
   | BinaryEqual
   | BinaryNotEqual
   | BinaryElement
+  | BinaryNotElement
   -- Conjunctive
   | BinaryAnd
   | BinaryIntersect
@@ -144,12 +146,12 @@ data TernaryOperator
   deriving (Eq, Show)
 
 data Signature
-  = ConstructorSignature !Identifier
-  | FunctionSignature [Signature] !Signature
-  | ApplicationSignature !Signature !Signature
+  = ApplicationSignature !SourcePos !Signature [Signature]
+  | ConstructorSignature !SourcePos !Identifier
+  | FunctionSignature !SourcePos [Signature] !Signature
   deriving (Eq, Show)
 
-newtype Identifier = Identifier Text
+newtype Identifier = Identifier { identifierText :: Text }
   deriving (Eq, Ord)
 
 instance Show Identifier where
@@ -169,119 +171,159 @@ parseProgram path source = Parsec.parse programParser path source
     programParser = Program
       <$> Parsec.between Parsec.spaces Parsec.eof (many statementParser)
 
-    token :: String -> Parser ()
-    token string = Parsec.try (Parsec.string string) *> Parsec.spaces
+    -- A symbol that may appear adjacent to operator characters.
+    symbol :: String -> Parser ()
+    symbol string = Parsec.try (Parsec.string string) *> Parsec.spaces
+
+    -- A keyword that must not be followed by an identifier character.
+    keyword :: String -> Parser ()
+    keyword string = Parsec.try
+      $ Parsec.string string
+      *> Parsec.notFollowedBy (Parsec.satisfy continuesIdentifier)
+      *> Parsec.spaces
+
+    -- An operator that must not be followed by an operator character. This
+    -- makes all combinations of operator characters reserved for future use.
+    operator :: String -> Parser ()
+    operator string = Parsec.try
+      $ Parsec.string string
+      *> Parsec.notFollowedBy (Parsec.satisfy isOperator)
+      *> Parsec.spaces
 
     grouped :: Parser a -> Parser a
-    grouped = Parsec.between (token "(") (token ")")
+    grouped = Parsec.between (symbol "(") (symbol ")")
+
+    namedGrouped :: String -> String -> Parser a -> Parser a
+    namedGrouped begin end = Parsec.between
+      (symbol "(" <?> begin)
+      (symbol ")" <?> end)
 
     bracketed :: Parser a -> Parser a
-    bracketed = Parsec.between (token "[") (token "]")
+    bracketed = Parsec.between (symbol "[") (symbol "]")
+
+    namedBracketed :: String -> String -> Parser a -> Parser a
+    namedBracketed begin end = Parsec.between
+      (symbol "[" <?> begin)
+      (symbol "]" <?> end)
 
     blocked :: Parser a -> Parser a
-    blocked = Parsec.between (token "{") (token "}")
+    blocked = Parsec.between (symbol "{") (symbol "}")
+
+    namedBlocked :: String -> String -> Parser a -> Parser a
+    namedBlocked begin end = Parsec.between
+      (symbol "{" <?> begin)
+      (symbol "}" <?> end)
 
     quoted :: Parser a -> Parser a
     quoted = Parsec.between (Parsec.char '"') (Parsec.char '"')
 
     statementParser :: Parser Statement
-    statementParser = asum
+    statementParser = (<?> "statement") $ asum
+
       [ AtomicStatement
-        <$> (getSourcePos <* token "atomic")
+        <$> (getSourcePos <* keyword "atomic")
         <*> statementParser
 
       , AfterStatement
-        <$> (getSourcePos <* token "after")
-        <*> grouped expressionParser
+        <$> (getSourcePos <* keyword "after")
+        <*> (grouped expressionParser <?> "'after' statement condition")
         <*> statementParser
 
       , AsLongAsStatement
-        <$> (getSourcePos <* token "as" <* token "long" <* token "as")
-        <*> grouped expressionParser
+        <$> (getSourcePos <* keyword "as" <* keyword "long" <* keyword "as")
+        <*> (grouped expressionParser <?> "'as long as' statement condition")
         <*> statementParser
 
-      , BlockStatement <$> getSourcePos <*> blocked (many statementParser)
+      , BlockStatement
+        <$> getSourcePos
+        <*> namedBlocked "beginning of block" "end of block"
+          (many statementParser)
 
       , EmptyStatement
-        <$> (getSourcePos <* token ";")
+        <$> (getSourcePos <* symbol ";")
 
       , do
-        pos <- getSourcePos <* token "for"
+        pos <- getSourcePos <* keyword "for"
         constructor <- asum
-          [ ForAllStatement <$ token "all"
-          , ForEachStatement <$ token "each"
-          ]
-        identifier <- identifierParser
-        container <- grouped expressionParser
+          [ ForAllStatement <$ keyword "all"
+          , ForEachStatement <$ keyword "each"
+          ] <?> "'for' loop type ('all' or 'each')"
+        identifier <- (identifierParser <?> "loop variable name")
+          <* keyword "in"
+        container <- grouped expressionParser <?> "loop container expression"
         body <- statementParser
         pure $ constructor pos identifier container body
 
       , FunctionStatement
-        <$> (getSourcePos <* token "function")
-        <*> identifierParser
-        <*> Parsec.sepEndBy
-          ((,)
-            <$> identifierParser
-            <*> Parsec.optionMaybe signatureParser)
-          (token ",")
+        <$> (getSourcePos <* keyword "function")
+        <*> (identifierParser <?> "function name")
+        <*> parameterListParser
+        <*> Parsec.optionMaybe (symbol ":" *> signatureParser)
         <*> statementParser
 
+      -- See note [Dangling Else].
       , IfStatement
-        <$> (getSourcePos <* token "if")
-        <*> grouped expressionParser
+        <$> (getSourcePos <* keyword "if")
+        <*> (grouped expressionParser <?> "'if' statement condition")
         <*> statementParser
-        <*> Parsec.optionMaybe (token "else" *> statementParser)
+        <*> Parsec.optionMaybe (keyword "else" *> statementParser)
 
       , LastStatement
-        <$> (getSourcePos <* token "last")
-        <*> (Parsec.optionMaybe identifierParser <* token ";")
+        <$> (getSourcePos <* keyword "last")
+        <*> (Parsec.optionMaybe (identifierParser <?> "loop label")
+          <* symbol ";")
 
       , NextStatement
-        <$> (getSourcePos <* token "next")
-        <*> (Parsec.optionMaybe identifierParser <* token ";")
+        <$> (getSourcePos <* keyword "next")
+        <*> (Parsec.optionMaybe (identifierParser <?> "loop label")
+          <* symbol ";")
 
       , do
-        pos <- getSourcePos <* token "on"
+        pos <- getSourcePos <* keyword "on"
         constructor <- asum
-          [ OnChangeStatement <$ token "change"
-          , OnSetStatement <$ token "set"
+          [ OnChangeStatement <$ keyword "change"
+          , OnSetStatement <$ keyword "set"
           -- TODO: add, remove
-          ]
-        variables <- grouped (Parsec.sepEndBy identifierParser (token ","))
+          ] <?> "event name ('change' or 'set')"
+        variables <- grouped (Parsec.sepEndBy identifierParser (symbol ","))
+          <?> "event variables"
         body <- statementParser
         pure $ constructor pos variables body
 
       , RedoStatement
-        <$> (getSourcePos <* token "redo")
-        <*> (Parsec.optionMaybe identifierParser <* token ";")
+        <$> (getSourcePos <* keyword "redo")
+        <*> (Parsec.optionMaybe (identifierParser <?> "loop label")
+          <* symbol ";")
 
       , ReturnStatement
-        <$> (getSourcePos <* token "return")
-        <*> (Parsec.optionMaybe expressionParser <* token ";")
+        <$> (getSourcePos <* keyword "return")
+        <*> (Parsec.optionMaybe expressionParser <* keyword ";")
 
       , VarStatement
-        <$> (getSourcePos <* token "var")
+        <$> (getSourcePos <* keyword "var")
         <*> Parsec.sepBy
           ((,,)
             <$> identifierParser
-            <*> Parsec.optionMaybe (token ":" *> signatureParser)
-            <*> Parsec.optionMaybe (token "=" *> expressionParser))
-          (token ",")
+            <*> Parsec.optionMaybe (symbol ":" *> signatureParser)
+            <*> Parsec.optionMaybe (operator "=" *> expressionParser)
+            <?> "variable initializer")
+          (symbol ",")
+        <* symbol ";"
 
       , WheneverStatement
-        <$> (getSourcePos <* token "whenever")
-        <*> grouped expressionParser
+        <$> (getSourcePos <* keyword "whenever")
+        <*> (grouped expressionParser <?> "'whenever' statement condition")
         <*> statementParser
 
       , WhileStatement
-        <$> (getSourcePos <* token "while")
-        <*> grouped expressionParser
+        <$> (getSourcePos <* keyword "while")
+        <*> (grouped expressionParser <?> "'while' statement condition")
         <*> statementParser
 
       -- Must appear last.
       , ExpressionStatement
         <$> getSourcePos
-        <*> (expressionParser <* token ";")
+        <*> (expressionParser <* symbol ";")
 
       ]
 
@@ -292,74 +334,80 @@ parseProgram path source = Parsec.parse programParser path source
         operatorTable :: [[Expr.Operator String () Identity Expression]]
         operatorTable =
           -- Prefix
-          [ [ prefix "each" UnaryEach
-            , prefix "every" UnaryEvery
-            , prefix "-" UnaryMinus
-            , prefix "not" UnaryNot
-            , prefix "+" UnaryPlus
+          [ [ prefix (keyword "each") UnaryEach
+            , prefix (keyword "every") UnaryEvery
+            , prefix (operator "-") UnaryMinus
+            , prefix (keyword "not") UnaryNot
+            , prefix (operator "+") UnaryPlus
             ]
 
           -- Multiplicative
-          , [ binary "*" Expr.AssocLeft BinaryMultiply
-            , binary "/" Expr.AssocLeft BinaryDivide
-            , binary "mod" Expr.AssocLeft BinaryModulus
+          , [ binary (operator "*") Expr.AssocLeft BinaryMultiply
+            , binary (operator "/") Expr.AssocLeft BinaryDivide
+            , binary (keyword "mod") Expr.AssocLeft BinaryModulus
             ]
 
           -- Additive
-          , [ binary "+" Expr.AssocLeft BinaryAdd
-            , binary "-" Expr.AssocLeft BinarySubtract
+          , [ binary (operator "+") Expr.AssocLeft BinaryAdd
+            , binary (operator "-") Expr.AssocLeft BinarySubtract
             ]
 
           -- Relational
-          , [ binary "<" Expr.AssocLeft BinaryLess
-            , binary ">=" Expr.AssocLeft BinaryNotLess
-            , binary ">" Expr.AssocLeft BinaryGreater
-            , binary "<=" Expr.AssocLeft BinaryNotGreater
-            , binary "=" Expr.AssocLeft BinaryEqual
-            , binary "<>" Expr.AssocLeft BinaryNotEqual
-            , binary "in" Expr.AssocNone BinaryElement
+          -- See note [Compound Comparisons].
+          , [ binary (operator "<") Expr.AssocLeft BinaryLess
+            , binary (operator ">=") Expr.AssocLeft BinaryNotLess
+            , binary (operator ">") Expr.AssocLeft BinaryGreater
+            , binary (operator "<=") Expr.AssocLeft BinaryNotGreater
+            , binary (operator "=") Expr.AssocLeft BinaryEqual
+            , binary (operator "<>") Expr.AssocLeft BinaryNotEqual
+            , binary
+              (Parsec.try (keyword "is" *> keyword "in"))
+              Expr.AssocNone BinaryElement
+            , binary
+              (Parsec.try (keyword "is" *> keyword "not" *> keyword "in"))
+              Expr.AssocNone BinaryNotElement
             ]
 
           -- Conjunctive
-          , [ binary "and" Expr.AssocRight BinaryAnd
+          , [ binary (keyword "and") Expr.AssocRight BinaryAnd
             ]
 
           -- Disjunctive
-          , [ binary "or" Expr.AssocRight BinaryOr
-            , binary "xor" Expr.AssocRight BinaryXor
+          , [ binary (keyword "or") Expr.AssocRight BinaryOr
+            , binary (keyword "xor") Expr.AssocRight BinaryXor
             ]
 
           -- Implicative
-          , [ binary "implies" Expr.AssocRight BinaryImplies
+          , [ binary (keyword "implies") Expr.AssocRight BinaryImplies
             ]
 
           -- Assignment
-          , [ binary "<-" Expr.AssocNone BinaryAssign
+          , [ binary (operator "<-") Expr.AssocNone BinaryAssign
             ]
 
           ]
           where
 
             prefix
-              :: String
+              :: Parser a
               -> UnaryOperator
               -> Expr.Operator String () Identity Expression
-            prefix name operator = Expr.Prefix $ do
-              pos <- getSourcePos <* token name
+            prefix parser operator = Expr.Prefix $ do
+              pos <- getSourcePos <* parser
               pure $ UnaryExpression pos operator
 
             binary
-              :: String
+              :: Parser a
               -> Expr.Assoc
               -> BinaryOperator
               -> Expr.Operator String () Identity Expression
-            binary name associativity operator
+            binary parser associativity operator
               = flip Expr.Infix associativity $ do
-              pos <- getSourcePos <* token name
+              pos <- getSourcePos <* parser
               pure $ BinaryExpression pos operator
 
         termParser :: Parser Expression
-        termParser = do
+        termParser = (<?> "expression term") $ do
           prefix <- asum
 
             [ LiteralExpression
@@ -367,14 +415,14 @@ parseProgram path source = Parsec.parse programParser path source
               <*> literalParser
 
             , LetExpression
-              <$> (getSourcePos <* token "let")
+              <$> (getSourcePos <* keyword "let")
               <*> Parsec.sepBy
                 ((,,)
                   <$> identifierParser
-                  <*> Parsec.optionMaybe (token ":" *> signatureParser)
-                  <*> (token "=" *> expressionParser))
-                (token ",")
-              <*> (token "in" *> expressionParser)
+                  <*> Parsec.optionMaybe (symbol ":" *> signatureParser)
+                  <*> (operator "=" *> expressionParser))
+                (symbol ",")
+              <*> (keyword "in" *> expressionParser)
 
             , IdentifierExpression
               <$> getSourcePos
@@ -383,14 +431,14 @@ parseProgram path source = Parsec.parse programParser path source
             , GroupExpression <$> getSourcePos <*> grouped expressionParser
             ]
 
-          suffixes <- many suffixParser
-          pure $ foldl' (.) id suffixes prefix
+          suffixes <- many expressionSuffixParser
+          pure $ applySuffixes suffixes prefix
 
         character :: Parser Char
-        character = Parsec.noneOf "\\\""
+        character = (<?> "character") $ Parsec.noneOf "\\\""
 
         escape :: Parser Char
-        escape = Parsec.char '\\' *> asum
+        escape = (<?> "escape") $ Parsec.char '\\' *> asum
           [ '"' <$ Parsec.char '"'
           , '\\' <$ Parsec.char '\\'
           , do
@@ -398,26 +446,28 @@ parseProgram path source = Parsec.parse programParser path source
             Parsec.unexpected $ "unknown escape '" ++ [unknown] ++ "'"
           ]
 
-        suffixParser :: Parser (Expression -> Expression)
-        suffixParser = do
+        expressionSuffixParser :: Parser (Expression -> Expression)
+        expressionSuffixParser = do
           pos <- getSourcePos
           asum
-            [ do
-              subscripts <- bracketed $ Parsec.sepBy expressionParser (token ",")
+            [ (<?> "subscript suffix") $ do
+              subscripts <- namedBracketed "start of subscript" "end of subscript"
+                $ Parsec.sepBy expressionParser (symbol ",")
               pure $ \ prefix -> SubscriptExpression pos prefix subscripts
-            , do
-              identifier <- identifierParser
+            , (<?> "member lookup suffix") $ do
+              identifier <- symbol "." *> identifierParser
               pure $ \ prefix -> DotExpression pos prefix identifier
-            , do
-              arguments <- grouped $ Parsec.sepEndBy expressionParser (token ",")
+            , (<?> "call suffix") $ do
+              arguments <- grouped
+                $ Parsec.sepEndBy expressionParser (symbol ",")
               pure $ \ prefix -> CallExpression pos prefix arguments
             ]
 
         literalParser :: Parser Literal
-        literalParser = asum
+        literalParser = (<?> "literal") $ asum
           [ BooleanLiteral <$> asum
-            [ True <$ token "true"
-            , False <$ token "false"
+            [ True <$ keyword "true"
+            , False <$ keyword "false"
             ]
 
           , do
@@ -433,14 +483,25 @@ parseProgram path source = Parsec.parse programParser path source
 
           , TextLiteral <$> textLiteralParser
 
-          , NullLiteral <$ token "null"
+          , NullLiteral <$ keyword "null"
 
           , ListLiteral
-            <$> bracketed (Parsec.sepEndBy expressionParser (token ","))
+            <$> namedBracketed "beginning of list" "end of list"
+              (asum
+                -- See note [Empty Container Literal Comma].
+                [ [] <$ symbol ","
+                , Parsec.sepEndBy
+                  (expressionParser <?> "list element")
+                  (symbol ",")
+                ])
 
-          , token "{" *> do
-            keyValuePairs <- Parsec.sepEndBy keyValuePair (token ",")
-              <* token "}"
+          , symbol "{" *> do
+            keyValuePairs <- asum
+              -- See note [Empty Container Literal Comma].
+              [ [] <$ symbol ","
+              , Parsec.sepEndBy keyValuePair (symbol ",")
+              ]
+              <* (symbol "}" <?> "end of map/set literal")
             let
               (setKeys, mapKeyValues) = partitionEithers
                 $ map (\ (key, mValue) -> case mValue of
@@ -452,6 +513,14 @@ parseProgram path source = Parsec.parse programParser path source
               (False, True) -> pure $ SetLiteral setKeys
               (False, False)
                 -> Parsec.unexpected "map missing values for some keys"
+
+          , keyword "function"
+            *> (FunctionLiteral
+              <$> Parsec.optionMaybe (identifierParser <?> "function name")
+              <*> parameterListParser
+              <*> Parsec.optionMaybe (symbol ":" *> signatureParser)
+              <*> statementParser)
+
           ]
           where
 
@@ -463,21 +532,32 @@ parseProgram path source = Parsec.parse programParser path source
             keyValuePair = do
               pos <- getSourcePos
               asum
-                [ Parsec.try $ do
-                  key <- asum
-                    [ IdentifierExpression pos <$> identifierParser
-                    , LiteralExpression pos . TextLiteral <$> textLiteralParser
+                [ (<?> "map key-value pair") $ Parsec.try $ do
+                  key <- LiteralExpression pos . TextLiteral <$> asum
+                    [ identifierText <$> identifierParser
+                    , textLiteralParser
                     ]
-                  value <- token ":" *> expressionParser
+                  value <- symbol ":" *> expressionParser
                   pure (key, Just value)
-                , do
+                , (<?> "map key-value pair") $ do
                   key <- grouped expressionParser
-                  mValue <- Parsec.optionMaybe $ token ":" *> expressionParser
+                  mValue <- Parsec.optionMaybe $ symbol ":" *> expressionParser
                   pure (key, mValue)
-                , do
+                , (<?> "set element") $ do
                   key <- expressionParser
                   pure (key, Nothing)
                 ]
+
+    parameterListParser :: Parser [(Identifier, Maybe Signature, Maybe Expression)]
+    parameterListParser
+      = namedGrouped "beginning of parameter list" "end of parameter list"
+        (Parsec.sepEndBy
+          ((,,)
+            <$> identifierParser
+            <*> Parsec.optionMaybe (symbol ":" *> signatureParser)
+            <*> Parsec.optionMaybe (operator "=" *> expressionParser)
+            <?> "function parameter")
+        (symbol ",") <?> "function parameter list")
 
     getSourcePos :: Parser SourcePos
     getSourcePos = Parsec.statePos <$> Parsec.getParserState
@@ -487,12 +567,85 @@ parseProgram path source = Parsec.parse programParser path source
       <$> ((:)
         <$> Parsec.satisfy startsIdentifier
         <*> (many (Parsec.satisfy continuesIdentifier) <* Parsec.spaces))
-      where
-        startsIdentifier = isAsciiLower .|| isAsciiUpper .|| (== '_')
-        continuesIdentifier = startsIdentifier .|| isDigit
+
+    startsIdentifier :: Char -> Bool
+    startsIdentifier = isAsciiLower .|| isAsciiUpper .|| (== '_')
+
+    continuesIdentifier :: Char -> Bool
+    continuesIdentifier = startsIdentifier .|| isDigit
+
+    isOperator :: Char -> Bool
+    isOperator = (`elem` ("!#$%&*+-./<=>?@\\^|~" :: String))
 
     signatureParser :: Parser Signature
-    signatureParser = fail "TODO: signatureParser"
+    signatureParser = (<?> "type signature") $ do
+      prefix <- asum
+        [ do
+          pos <- getSourcePos <* keyword "function"
+          parameters <- grouped (Parsec.sepEndBy signatureParser (symbol ","))
+          result <- symbol ":" *> signatureParser
+          pure $ FunctionSignature pos parameters result
+        , ConstructorSignature <$> getSourcePos <*> identifierParser
+        , grouped signatureParser
+        ]
+      suffixes <- many signatureSuffixParser
+      pure $ applySuffixes suffixes prefix
+
+    -- Currently this only supports type applications such as "list(int)" or
+    -- "map(text, int)" but it should be extended as the type system evolves.
+    signatureSuffixParser :: Parser (Signature -> Signature)
+    signatureSuffixParser = do
+      pos <- getSourcePos
+      arguments <- grouped
+        $ Parsec.sepEndBy signatureParser (symbol ",")
+      pure $ \ prefix -> ApplicationSignature pos prefix arguments
+
+    applySuffixes :: [a -> a] -> a -> a
+    applySuffixes = foldl' (flip (.)) id
+
+-- Note [Empty Container Literal Comma]:
+--
+-- I'm not yet sure why it's necessary to explicitly handle the case of a
+-- container literal containing only a comma, but without it, parsing a list
+-- like "[,]" fails.
+
+-- Note [Compound Comparisons]:
+--
+-- Relational operators are traditionally marked non-associative, making
+-- comparisons like "x < y < z" illegal. They are currently marked as
+-- left-associative so they can be desugared to compound comparisons, as in
+-- Python, where "x1 op1 x2 op2 x3 ... xn" is desugared to:
+--
+--     let _x1 = x1, _x2 = x2 in
+--       (_x1 op1 _x2) and
+--       let _x3 = x3 in
+--         _x2 op2 _x3 and
+--         ...
+
+-- Note [Dangling Else]:
+--
+-- The "dangling else" is resolved as in C, bound to the nearest 'if'.
+-- Unfortunately, this can cause misleading code:
+--
+--     if (a)
+--         if (b)
+--             c ();
+--     else
+--         d ();
+--
+-- This is parsed as:
+--
+--     if (a) {
+--         if (b) {
+--             c ();
+--         } else {
+--             d ();
+--         }
+--     }
+--
+-- TODO: The compiler should add a warning when a control statement is nested
+-- directly inside another control statement without being wrapped in a block
+-- to help avoid this.
 
 data Value
   = BooleanValue !Bool
