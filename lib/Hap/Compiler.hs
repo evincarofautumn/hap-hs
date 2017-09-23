@@ -12,13 +12,13 @@ import Hap.Runtime
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-compile :: Program -> Either CompileError (Exp ())
+compile :: Program -> Either CompileError (Hap ())
 compile (Program statements)
   = fmap sequence_ (traverse compileStatement statements)
 
 type CompileError = String
 
-compileStatement :: Statement -> Either CompileError (Exp ())
+compileStatement :: Statement -> Either CompileError (Hap ())
 compileStatement statement = case statement of
   AtomicStatement _pos body -> Left "TODO: compile AtomicStatement"
   AfterStatement _pos condition body -> do
@@ -60,7 +60,7 @@ compileStatement statement = case statement of
 -}
   _ -> Left "TODO: compile statement"
 
-compileExpression :: Expression -> Either CompileError (Exp Value)
+compileExpression :: Expression -> Either CompileError (Hap Value)
 compileExpression expression = case expression of
   LiteralExpression _pos literal -> case literal of
     BooleanLiteral value -> pure $ pure $ BooleanValue value
@@ -122,7 +122,7 @@ compileExpression expression = case expression of
 -- can be stopped before the action has had a chance to run.
 --
 -- TODO: Implement this as a function or macro within Hap.
-after :: Exp Value -> Exp () -> Exp (Maybe Id)
+after :: Hap Value -> Hap () -> Hap (Maybe Id)
 after condition action = do
   current <- cell condition
   initial <- get current
@@ -144,7 +144,7 @@ after condition action = do
 -- Add an action to be run whenever a condition becomes true, that is, when it
 -- changes from false to true. If true initially, the action is also run as soon
 -- as the handler is added.
-whenever :: Exp Value -> Exp () -> Exp Id
+whenever :: Hap Value -> Hap () -> Hap Id
 whenever condition action = do
   current <- cell condition
   initial <- get current

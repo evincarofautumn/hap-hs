@@ -4,8 +4,8 @@ module Hap.Runtime
   ( Cell
   , Cycle
   , Env(..)
-  , Exp
   , Handler(..)
+  , Hap
   , Id
   , SomeCell
   , WeakCell
@@ -45,7 +45,7 @@ import qualified Data.IntSet as IntSet
 data Env = Env
   { envListeners :: !(IORef [(Id, IntSet, Handler)])
   , envNext :: !(IORef Id)
-  , envQueue :: !(IORef [Exp ()])
+  , envQueue :: !(IORef [Hap ()])
   }
 
 -- An ID is a globally unique integer used to identify cells and listeners.
@@ -55,7 +55,7 @@ type Id = Int
 -- to cells that it reads, and a set of weak references to cells that read it.
 data Cell a = Cell
   { cellId :: !Id
-  , cellExpression :: !(IORef (Exp a))
+  , cellExpression :: !(IORef (Hap a))
   , cellCache :: !(IORef (Cache a))
   , cellReads :: !(IORef [SomeCell])
   , cellObservers :: !(IORef [WeakCell])
@@ -89,14 +89,14 @@ data SomeCell = forall a. SomeCell (Cell a)
 -- TODO: 'Add' and 'Remove' indicate that a value was inserted into or removed
 -- from a cell whose value is a container.
 data Handler
-  = Set !(Exp ())
-  | Add !(Exp ())
-  | Remove !(Exp ())
+  = Set !(Hap ())
+  | Add !(Hap ())
+  | Remove !(Hap ())
 
 -- An expression may read and alter the contents of the environment, and perform
 -- I/O. It returns a result as well as a list of references to the cells that it
 -- reads while computing a result.
-newtype Exp a = Exp { unExp :: Env -> IO (a, [SomeCell]) }
+newtype Hap a = Hap { unHap :: Env -> IO (a, [SomeCell]) }
 
 --------------------------------------------------------------------------------
 -- Environment Operations
@@ -115,29 +115,29 @@ newEmptyEnv = do
     }
 
 -- Run a computation in the given environment.
-run :: Env -> Exp a -> IO a
-run env (Exp action) = fst <$> action env
+run :: Env -> Hap a -> IO a
+run env (Hap action) = fst <$> action env
 
 -- Unsafely access the environment from within a Hap computation.
-unsafeGetEnv :: Exp Env
-unsafeGetEnv = Exp $ \ env -> pure (env, [])
+unsafeGetEnv :: Hap Env
+unsafeGetEnv = Hap $ \ env -> pure (env, [])
 
 --------------------------------------------------------------------------------
 -- Cell Operations
 --------------------------------------------------------------------------------
 
 -- Allocate a fresh cell ID.
-newId :: Exp Id
-newId = Exp $ \ env -> do
+newId :: Hap Id
+newId = Hap $ \ env -> do
   x <- readIORef $ envNext env
   writeIORef (envNext env) (x + 1)
   pure (x, [])
 
 -- Allocate a new cell containing the given expression.
-cell :: Exp a -> Exp (Cell a)
+cell :: Hap a -> Hap (Cell a)
 cell exp = do
   n <- newId
-  Exp $ \ env -> do
+  Hap $ \ env -> do
     code <- newIORef exp
     cache <- newIORef Empty
     reads <- newIORef []
@@ -153,8 +153,8 @@ cell exp = do
     pure (cell, [])
 
 -- Get the value of a cell.
-get :: Cell a -> Exp a
-get c = Exp $ \ env -> do
+get :: Cell a -> Hap a
+get c = Hap $ \ env -> do
   cache <- readIORef (cellCache c)
   case cache of
     Full v -> pure (v, [SomeCell c])
@@ -162,7 +162,7 @@ get c = Exp $ \ env -> do
       -- Replace the cache with a black hole during evaluation to detect
       -- reference cycles.
       writeIORef (cellCache c) Blackhole
-      (v, ds) <- join $ unExp <$> readIORef (cellExpression c) <*> pure env
+      (v, ds) <- join $ unHap <$> readIORef (cellExpression c) <*> pure env
       writeIORef (cellCache c) (Full v)
       writeIORef (cellReads c) ds
       wc <- makeWeakCell c
@@ -171,8 +171,8 @@ get c = Exp $ \ env -> do
     Blackhole -> throwIO $ Cycle $ SomeCell c
 
 -- Set the value of a cell to a new expression.
-set :: Cell a -> Exp a -> Exp ()
-set c exp = Exp $ \ env -> do
+set :: Cell a -> Hap a -> Hap ()
+set c exp = Hap $ \ env -> do
   writeIORef (cellExpression c) exp
   let sc = SomeCell c
   invalidate env sc
@@ -203,10 +203,10 @@ strengthen (WeakCell wc) = do
 --------------------------------------------------------------------------------
 
 -- Add an event listener for the given cells and return the listener's ID.
-on :: IntSet -> Handler -> Exp Id
+on :: IntSet -> Handler -> Hap Id
 on cells handler = do
   n <- newId
-  Exp $ \ env -> do
+  Hap $ \ env -> do
     modifyIORef' (envListeners env) ((n, cells, handler) :)
     pure (n, [])
 
@@ -214,21 +214,21 @@ on cells handler = do
 --
 -- TODO: Return the old listener so it can be restarted. (That could also be
 -- implemented with a per-listener flag for pausing & resuming.)
-stop :: Id -> Exp ()
-stop listener = Exp $ \ env -> do
+stop :: Id -> Hap ()
+stop listener = Hap $ \ env -> do
   modifyIORef' (envListeners env) $ filter
     $ \ (listener', _, _) -> listener' /= listener
   pure ((), [])
 
 -- Add an action to be run when any of the given cells is set.
-onSet :: [Cell a] -> Exp () -> Exp Id
+onSet :: [Cell a] -> Hap () -> Hap Id
 onSet cells = on (IntSet.fromList $ map cellId cells) . Set
 
 -- Add an action to be run when any of the given cells is changed, that is, when
 -- it is set and the new value is not equal to the old value.
 --
 -- TODO: Implement this as a function or macro within Hap.
-onChange :: (Eq a) => [Cell a] -> Exp () -> Exp Id
+onChange :: (Eq a) => [Cell a] -> Hap () -> Hap Id
 onChange cells action = do
   values <- mapM get cells
   state <- cell $ pure values
@@ -278,7 +278,7 @@ notifySet env sc@(SomeCell c) = do
       _ -> pure ()
 
 -- Enqueue an action to be executed at the next sequence point.
-enqueue :: Env -> Exp () -> IO ()
+enqueue :: Env -> Hap () -> IO ()
 enqueue env action = do
   modifyIORef' (envQueue env) (action :)
 
@@ -297,26 +297,26 @@ sequencePoint env = do
 --------------------------------------------------------------------------------
 
 -- Map over the result of an expression.
-instance Functor Exp where
-  fmap f (Exp action) = Exp $ \ env -> do
+instance Functor Hap where
+  fmap f (Hap action) = Hap $ \ env -> do
     (result, reads) <- action env
     pure (f result, reads)
 
 -- Embed values in an expression or join expressions by function application.
-instance Applicative Exp where
-  pure x = Exp (\ env -> pure (x, []))
-  Exp mf <*> Exp mx = Exp $ \ env -> do
+instance Applicative Hap where
+  pure x = Hap (\ env -> pure (x, []))
+  Hap mf <*> Hap mx = Hap $ \ env -> do
     (f, reads) <- mf env
     (x, reads') <- mx env
     pure (f x, union reads reads')
 
 -- Sequence expressions, introducing a sequence point to flush the queue.
-instance Monad Exp where
+instance Monad Hap where
   return = pure
-  Exp cmd >>= f = Exp $ \ env -> do
+  Hap cmd >>= f = Hap $ \ env -> do
     (a, cs) <- cmd env
     sequencePoint env
-    (b, ds) <- unExp (f a) env
+    (b, ds) <- unHap (f a) env
     pure (b, union cs ds)
 
 -- Arbitrary I/O actions can be executed in an expression.
@@ -325,18 +325,18 @@ instance Monad Exp where
 -- "pure" expressions (e.g., event conditions), even though they use I/O
 -- internally. It also allows weak cel references: an expression can read a cell
 -- but not record the dependency by wrapping the read in 'liftIO' + 'run'.
-instance MonadIO Exp where
-  liftIO action = Exp $ \ env -> do
+instance MonadIO Hap where
+  liftIO action = Hap $ \ env -> do
     result <- action
     pure (result, [])
 
 -- This allows the body of a handler to refer to the handler itself, e.g., to
 -- implement automatic stopping.
-instance MonadFix Exp where
-  mfix action = Exp $ \ env -> do
+instance MonadFix Hap where
+  mfix action = Hap $ \ env -> do
     signal <- newEmptyMVar
     argument <- unsafeInterleaveIO $ takeMVar signal
-    (result, reads) <- unExp (action argument) env
+    (result, reads) <- unHap (action argument) env
     putMVar signal result
     pure (result, reads)
 
