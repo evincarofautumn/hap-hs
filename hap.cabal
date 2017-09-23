@@ -2,7 +2,7 @@ name:                hap
 version:             0.1.0.0
 synopsis:            A Haskell implementation of Hap.
 -- description:
-homepage:            https://github.com/githubuser/hap-simple#readme
+homepage:            https://github.com/evincarofautumn/hap-hs#readme
 license:             MIT
 license-file:        LICENSE
 author:              Jon Purdy
