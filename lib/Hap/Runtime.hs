@@ -1,5 +1,4 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE RecursiveDo #-}
 
 module Hap.Runtime
   ( Cell
@@ -10,7 +9,6 @@ module Hap.Runtime
   , Id
   , SomeCell
   , WeakCell
-  , after
   , cell
   , get
   , newEmptyEnv
@@ -21,7 +19,7 @@ module Hap.Runtime
   , run
   , set
   , stop
-  , whenever
+  , unsafeGetEnv
   ) where
 
 import Control.Concurrent.MVar
@@ -119,6 +117,10 @@ newEmptyEnv = do
 -- Run a computation in the given environment.
 run :: Env -> Exp a -> IO a
 run env (Exp action) = fst <$> action env
+
+-- Unsafely access the environment from within a Hap computation.
+unsafeGetEnv :: Exp Env
+unsafeGetEnv = Exp $ \ env -> pure (env, [])
 
 --------------------------------------------------------------------------------
 -- Cell Operations
@@ -279,50 +281,6 @@ notifySet env sc@(SomeCell c) = do
 enqueue :: Env -> Exp () -> IO ()
 enqueue env action = do
   modifyIORef' (envQueue env) (action :)
-
---------------------------------------------------------------------------------
--- High-level Event Operations
---------------------------------------------------------------------------------
-
--- Add an action to be run whenever a condition becomes true, that is, when it
--- changes from false to true. If true initially, the action is also run as soon
--- as the handler is added.
-whenever :: Exp Bool -> Exp () -> Exp Id
-whenever condition action = do
-  current <- cell condition
-  initial <- get current
-  previous <- cell $ pure initial
-  when initial action
-  onChange [current] $ do
-    previous' <- get previous
-    current' <- get current
-    set previous $ pure current'
-    when (current' && not previous') action
-
--- Add an action to be run the first time a condition becomes true, after which
--- it's removed. If true initially, the action is run immediately and the
--- listener is not added. Returns the ID of the listener if one was added; it
--- can be stopped before the action has had a chance to run.
---
--- TODO: Implement this as a function or macro within Hap.
-after :: Exp Bool -> Exp () -> Exp (Maybe Id)
-after condition action = do
-  current <- cell condition
-  initial <- get current
-  if initial
-    then do
-      action
-      pure Nothing
-    else do
-      state <- cell $ pure False
-      rec
-        handler <- whenever condition $ do
-          state' <- get state
-          when (not state') $ do
-            action
-            stop handler
-          set state $ pure True
-      pure $ Just handler
 
 -- Flush the queue of actions to be executed. Since these actions may enqueue
 -- further actions, the whole queue is flushed at once to prevent infinite

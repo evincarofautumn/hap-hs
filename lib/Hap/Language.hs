@@ -1,13 +1,20 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Hap.Language
   ( BinaryOperator(..)
   , Expression(..)
   , Identifier(..)
   , Literal(..)
+  , NativeId
   , Program(..)
   , Signature(..)
   , Statement(..)
   , TernaryOperator(..)
   , UnaryOperator(..)
+  , Value(..)
+  , nativeFunction
+  , nativeId
+  , nativeName
   , parseProgram
   ) where
 
@@ -16,13 +23,22 @@ import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Either (partitionEithers)
 import Data.Foldable (asum)
 import Data.Functor.Identity (Identity)
-import Data.List (foldl')
+import Data.IntMap (IntMap)
+import Data.List (foldl', intercalate)
+import Data.Map (Map)
+import Data.Maybe (fromMaybe)
+import Data.Set (Set)
 import Data.Text (Text)
+import GHC.Exts (IsString(..))
 import Hap.Operators
+import Hap.Runtime (Env)
 import Text.Parsec (ParseError)
 import Text.Parsec.Expr (buildExpressionParser)
 import Text.Parsec.Pos (SourcePos)
 import Text.Parsec.String (Parser)
+import qualified Data.IntMap as IntMap
+import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Text.Parsec as Parsec
 import qualified Text.Parsec.Expr as Expr
@@ -134,7 +150,13 @@ data Signature
   deriving (Eq, Show)
 
 newtype Identifier = Identifier Text
-  deriving (Eq, Show)
+  deriving (Eq, Ord)
+
+instance Show Identifier where
+  show (Identifier identifier) = Text.unpack identifier
+
+instance IsString Identifier where
+  fromString = Identifier . fromString
 
 --------------------------------------------------------------------------------
 -- Parsing
@@ -471,3 +493,76 @@ parseProgram path source = Parsec.parse programParser path source
 
     signatureParser :: Parser Signature
     signatureParser = fail "TODO: signatureParser"
+
+data Value
+  = BooleanValue !Bool
+  | FloatValue !Double
+  | IntegerValue !Integer
+  | TextValue !Text
+  | NullValue
+  | ListValue [Value]
+  | MapValue !(Map Value Value)
+  | SetValue !(Set Value)
+  | NativeValue !NativeId
+  deriving (Eq, Ord)
+
+instance Show Value where
+  show value = case value of
+    BooleanValue value -> if value then "true" else "false"
+    FloatValue value -> show value
+    IntegerValue value -> show value
+    TextValue value -> Text.unpack value
+    NullValue -> "null"
+    ListValue elements -> concat
+      [ "["
+      , intercalate ", " $ map show elements
+      , "]"
+      ]
+    MapValue pairs -> concat
+      [ "{ "
+      , intercalate ", " $ map showPair $ Map.toList pairs
+      , " }"
+      ]
+      where
+        showPair (key, value) = concat [show key, ": ", show value]
+    SetValue elements -> concat
+      [ "{ "
+      , intercalate ", " $ map show $ Set.toList elements
+      , " }"
+      ]
+    NativeValue n -> show $ nativeName n
+
+newtype NativeId = NativeId Int
+  deriving (Eq, Ord, Show)
+
+type NativeFunction = Env -> [Value] -> IO Value
+
+native :: [(Identifier, NativeFunction)]
+native =
+  [ (,) "output" $ \ _env args -> do
+    mapM_ print args
+    pure NullValue
+  ]
+
+nativeIds :: Map Identifier NativeId
+nativeIds = Map.fromList
+  $ map fst native `zip` map NativeId [0..]
+
+nativeNames :: IntMap Identifier
+nativeNames = IntMap.fromList
+  $ [0..] `zip` map fst native
+
+nativeFunctions :: IntMap NativeFunction
+nativeFunctions = IntMap.fromList
+  $ [0..] `zip` map snd native
+
+nativeId :: Identifier -> Maybe NativeId
+nativeId identifier = Map.lookup identifier nativeIds
+
+nativeName :: NativeId -> Identifier
+nativeName (NativeId n) = fromMaybe (error "undefined native ID")
+  $ IntMap.lookup n nativeNames
+
+nativeFunction :: NativeId -> NativeFunction
+nativeFunction (NativeId n) = fromMaybe (error "undefined native ID")
+  $ IntMap.lookup n nativeFunctions
