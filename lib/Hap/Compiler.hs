@@ -90,6 +90,9 @@ compileExpression expression = case expression of
       pure $ do
         elementValues <- sequence compiledElements
         pure $ SetValue $ Set.fromList elementValues
+    FunctionLiteral name parameters result body -> do
+      compiledBody <- compileStatement body
+      pure $ pure $ FunctionValue name parameters result body compiledBody
   IdentifierExpression _pos identifier -> do
     -- TODO: Look up names in scope.
     pure $ pure $ NativeValue $ fromJust $ nativeId identifier

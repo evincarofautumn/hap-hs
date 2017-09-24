@@ -31,7 +31,7 @@ import Data.Set (Set)
 import Data.Text (Text)
 import GHC.Exts (IsString(..))
 import Hap.Operators
-import Hap.Runtime (Env)
+import Hap.Runtime (Env, Hap)
 import Text.Parsec (ParseError, (<?>))
 import Text.Parsec.Expr (buildExpressionParser)
 import Text.Parsec.Pos (SourcePos)
@@ -72,7 +72,7 @@ data Statement
   | VarStatement !SourcePos [(Identifier, Maybe Signature, Maybe Expression)]
   | WheneverStatement !SourcePos !Expression !Statement
   | WhileStatement !SourcePos !Expression !Statement
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data Expression
   = LiteralExpression !SourcePos !Literal
@@ -85,7 +85,7 @@ data Expression
   | UnaryExpression !SourcePos !UnaryOperator !Expression
   | BinaryExpression !SourcePos !BinaryOperator !Expression !Expression
   | IfExpression !SourcePos !Expression !Expression !Expression
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data Literal
   = BooleanLiteral !Bool
@@ -97,7 +97,7 @@ data Literal
   | MapLiteral [(Expression, Expression)]
   | SetLiteral [Expression]
   | FunctionLiteral !(Maybe Identifier) [(Identifier, Maybe Signature, Maybe Expression)] !(Maybe Signature) !Statement
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data UnaryOperator
   = UnaryAddress
@@ -109,7 +109,7 @@ data UnaryOperator
   | UnaryMinus
   | UnaryNot
   | UnaryPlus
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data BinaryOperator
   -- Multiplicative
@@ -139,13 +139,13 @@ data BinaryOperator
   | BinaryImplies
   -- Assignment
   | BinaryAssign
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data Signature
   = ApplicationSignature !SourcePos !Signature [Signature]
   | ConstructorSignature !SourcePos !Identifier
   | FunctionSignature !SourcePos [Signature] !Signature
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 newtype Identifier = Identifier { identifierText :: Text }
   deriving (Eq, Ord)
@@ -644,6 +644,9 @@ parseProgram path source = Parsec.parse programParser path source
 -- directly inside another control statement without being wrapped in a block
 -- to help avoid this.
 
+-- The dynamic representation of a Hap value.
+--
+-- If you update this, you should also update the 'Eq' and 'Ord' instances.
 data Value
   = BooleanValue !Bool
   | FloatValue !Double
@@ -654,7 +657,52 @@ data Value
   | MapValue !(Map Value Value)
   | SetValue !(Set Value)
   | NativeValue !NativeId
-  deriving (Eq, Ord)
+  -- TODO: Add static environment.
+  | FunctionValue
+    !(Maybe Identifier)
+    [(Identifier, Maybe Signature, Maybe Expression)]
+    !(Maybe Signature)
+    !Statement
+    !(Hap ())
+
+instance Eq Value where
+  BooleanValue a == BooleanValue b = a == b
+  FloatValue a == FloatValue b = a == b
+  IntegerValue a == IntegerValue b = a == b
+  TextValue a == TextValue b = a == b
+  NullValue == NullValue = True
+  ListValue a == ListValue b = a == b
+  MapValue a == MapValue b = a == b
+  SetValue a == SetValue b = a == b
+  NativeValue a == NativeValue b = a == b
+  -- Function values compare ignoring their compiled representation.
+  FunctionValue a b c d _ == FunctionValue e f g h _
+    = (a, b, c, d) == (e, f, g, h)
+  _ == _ = False
+
+instance Ord Value where
+  compare = curry $ \ case
+    (BooleanValue a, BooleanValue b) -> a `compare` b
+    (FloatValue a, FloatValue b) -> a `compare` b
+    (IntegerValue a, IntegerValue b) -> a `compare` b
+    (TextValue a, TextValue b) -> a `compare` b
+    (NullValue, NullValue) -> EQ
+    (ListValue a, ListValue b) -> a `compare` b
+    (MapValue a, MapValue b) -> a `compare` b
+    (SetValue a, SetValue b) -> a `compare` b
+    (NativeValue a, NativeValue b) -> a `compare` b
+    -- Function values compare ignoring their compiled representation.
+    (FunctionValue a b c d _, FunctionValue e f g h _)
+      -> (a, b, c, d) `compare` (e, f, g, h)
+    -- It would be possible to define an arbitrary ordering for comparisons
+    -- between values of different types, but if this case is reached, it
+    -- probably indicates a typechecker bug.
+    (a, b) -> error $ concat
+      [ "comparison of incomparable values "
+      , show a
+      , " and "
+      , show b
+      ]
 
 instance Show Value where
   show = \ case
@@ -681,6 +729,30 @@ instance Show Value where
       , " }"
       ]
     NativeValue n -> show $ nativeName n
+    FunctionValue name parameters result body _compiled -> concat
+      [ "function"
+      , case name of
+        Just identifier -> concat [" ", show identifier]
+        Nothing -> ""
+      , "("
+      , intercalate ", " $ map showParameter parameters
+      , ")"
+      , case result of
+        Just signature -> concat [": ", show signature]
+        Nothing -> ""
+      , " "
+      , show body
+      ]
+      where
+        showParameter (parameterName, parameterType, parameterDefault) = concat
+          [ show parameterName
+          , case parameterType of
+            Just signature -> concat [": ", show signature]
+            Nothing -> ""
+          , case parameterDefault of
+            Just expression -> concat [" = ", show expression]
+            Nothing -> ""
+          ]
 
 newtype NativeId = NativeId Int
   deriving (Eq, Ord, Show)
