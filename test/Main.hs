@@ -758,6 +758,21 @@ spec = do
             ]) -> True
           _ -> False
 
+      specify "'if' expressions" $ do
+
+        parseTest "(if (x) a else b)();" $ \ program -> case program of
+          Right (Program
+            [ ExpressionStatement _
+              (CallExpression _
+                (GroupExpression _
+                  (IfExpression _
+                    (IdentifierExpression _ "x")
+                    (IdentifierExpression _ "a")
+                    (IdentifierExpression _ "b")))
+                [])
+            ]) -> True
+          _ -> False
+
       specify "'let' expressions" $ do
 
         parseTest "let x = 1 in output(x);" $ \ program -> case program of

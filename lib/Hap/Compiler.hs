@@ -112,7 +112,6 @@ compileExpression expression = case expression of
   GroupExpression !SourcePos !Expression
   UnaryExpression !SourcePos !UnaryOperator !Expression
   BinaryExpression !SourcePos !BinaryOperator !Expression !Expression
-  TernaryExpression !SourcePos !TernaryOperator !Expression !Expression !Expression
 -}
   _ -> Left $ "TODO: compile expression: " ++ show expression
 

@@ -9,7 +9,6 @@ module Hap.Language
   , Program(..)
   , Signature(..)
   , Statement(..)
-  , TernaryOperator(..)
   , UnaryOperator(..)
   , Value(..)
   , nativeFunction
@@ -84,7 +83,7 @@ data Expression
   | GroupExpression !SourcePos !Expression
   | UnaryExpression !SourcePos !UnaryOperator !Expression
   | BinaryExpression !SourcePos !BinaryOperator !Expression !Expression
-  | TernaryExpression !SourcePos !TernaryOperator !Expression !Expression !Expression
+  | IfExpression !SourcePos !Expression !Expression !Expression
   deriving (Eq, Show)
 
 data Literal
@@ -139,10 +138,6 @@ data BinaryOperator
   | BinaryImplies
   -- Assignment
   | BinaryAssign
-  deriving (Eq, Show)
-
-data TernaryOperator
-  = TernaryConditional
   deriving (Eq, Show)
 
 data Signature
@@ -423,6 +418,13 @@ parseProgram path source = Parsec.parse programParser path source
                   <*> (operator "=" *> expressionParser))
                 (symbol ",")
               <*> (keyword "in" *> expressionParser)
+
+            , IfExpression
+              <$> (getSourcePos <* keyword "if")
+              <*> (grouped expressionParser <?> "'if' expression condition")
+              <*> (expressionParser <?> "'if' expression true branch")
+              <*> (keyword "else"
+                *> (expressionParser <?> "'if' expression false branch"))
 
             , IdentifierExpression
               <$> getSourcePos
