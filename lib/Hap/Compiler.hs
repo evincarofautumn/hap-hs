@@ -20,7 +20,9 @@ type CompileError = String
 
 compileStatement :: Statement -> Either CompileError (Hap ())
 compileStatement statement = case statement of
-  AtomicStatement _pos body -> Left "TODO: compile AtomicStatement"
+{-
+  AtomicStatement !SourcePos !Statement
+-}
   AfterStatement _pos condition body -> do
     compiledCondition <- compileExpression condition
     compiledBody <- compileStatement body
@@ -58,7 +60,7 @@ compileStatement statement = case statement of
   WheneverStatement !SourcePos !Expression !Statement
   WhileStatement !SourcePos !Expression !Statement
 -}
-  _ -> Left "TODO: compile statement"
+  _ -> Left $ "TODO: compile statement: " ++ show statement
 
 compileExpression :: Expression -> Either CompileError (Hap Value)
 compileExpression expression = case expression of
