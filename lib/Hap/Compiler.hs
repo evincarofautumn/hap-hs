@@ -111,7 +111,11 @@ compileExpression expression = case expression of
       call _ _ = error "TODO: call non-native function"
 {-
   LetExpression !SourcePos [(Identifier, Maybe Signature, Expression)] !Expression
-  GroupExpression !SourcePos !Expression
+-}
+  GroupExpression _pos body -> do
+    compiledBody <- compileExpression body
+    pure $ compiledBody
+{-
   UnaryExpression !SourcePos !UnaryOperator !Expression
   BinaryExpression !SourcePos !BinaryOperator !Expression !Expression
 -}
