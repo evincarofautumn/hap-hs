@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hap.Language
@@ -193,16 +194,10 @@ parseProgram path source = Parsec.parse programParser path source
       (symbol "(" <?> begin)
       (symbol ")" <?> end)
 
-    bracketed :: Parser a -> Parser a
-    bracketed = Parsec.between (symbol "[") (symbol "]")
-
     namedBracketed :: String -> String -> Parser a -> Parser a
     namedBracketed begin end = Parsec.between
       (symbol "[" <?> begin)
       (symbol "]" <?> end)
-
-    blocked :: Parser a -> Parser a
-    blocked = Parsec.between (symbol "{") (symbol "}")
 
     namedBlocked :: String -> String -> Parser a -> Parser a
     namedBlocked begin end = Parsec.between
@@ -387,19 +382,19 @@ parseProgram path source = Parsec.parse programParser path source
               :: Parser a
               -> UnaryOperator
               -> Expr.Operator String () Identity Expression
-            prefix parser operator = Expr.Prefix $ do
+            prefix parser unaryOperator = Expr.Prefix $ do
               pos <- getSourcePos <* parser
-              pure $ UnaryExpression pos operator
+              pure $ UnaryExpression pos unaryOperator
 
             binary
               :: Parser a
               -> Expr.Assoc
               -> BinaryOperator
               -> Expr.Operator String () Identity Expression
-            binary parser associativity operator
+            binary parser associativity binaryOperator
               = flip Expr.Infix associativity $ do
               pos <- getSourcePos <* parser
-              pure $ BinaryExpression pos operator
+              pure $ BinaryExpression pos binaryOperator
 
         termParser :: Parser Expression
         termParser = (<?> "expression term") $ do
@@ -662,7 +657,7 @@ data Value
   deriving (Eq, Ord)
 
 instance Show Value where
-  show value = case value of
+  show = \ case
     BooleanValue value -> if value then "true" else "false"
     FloatValue value -> show value
     IntegerValue value -> show value

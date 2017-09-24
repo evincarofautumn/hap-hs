@@ -123,14 +123,14 @@ compileExpression expression = case expression of
 -- TODO: Implement this as a function or macro within Hap.
 after :: Hap Value -> Hap () -> Hap (Maybe Id)
 after condition action = do
-  current <- cell condition
+  current <- new condition
   initial <- get current
   if booleanValue initial
     then do
       action
       pure Nothing
     else do
-      state <- cell $ pure False
+      state <- new $ pure False
       rec
         handler <- whenever condition $ do
           state' <- get state
@@ -145,9 +145,9 @@ after condition action = do
 -- as the handler is added.
 whenever :: Hap Value -> Hap () -> Hap Id
 whenever condition action = do
-  current <- cell condition
+  current <- new condition
   initial <- get current
-  previous <- cell $ pure initial
+  previous <- new $ pure initial
   when (booleanValue initial) action
   onChange [current] $ do
     previous' <- get previous

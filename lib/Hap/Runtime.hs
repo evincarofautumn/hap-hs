@@ -9,8 +9,8 @@ module Hap.Runtime
   , Id
   , SomeCell
   , WeakCell
-  , cell
   , get
+  , new
   , newEmptyEnv
   , newId
   , on
@@ -31,6 +31,7 @@ import Data.IORef
 import Data.IntSet (IntSet)
 import Data.List (find)
 import Data.Typeable (Typeable)
+import Prelude hiding (id)
 import System.IO.Unsafe (unsafeInterleaveIO)
 import System.Mem.Weak
 import qualified Data.IntSet as IntSet
@@ -52,13 +53,14 @@ data Env = Env
 type Id = Int
 
 -- A cell has an identifier, an expression, a cached value, a set of references
--- to cells that it reads, and a set of weak references to cells that read it.
+-- to cells that it reads (sources), and a set of weak references to cells that
+-- read it (sinks).
 data Cell a = Cell
   { cellId :: !Id
   , cellExpression :: !(IORef (Hap a))
   , cellCache :: !(IORef (Cache a))
-  , cellReads :: !(IORef [SomeCell])
-  , cellObservers :: !(IORef [WeakCell])
+  , cellSources :: !(IORef [SomeCell])
+  , cellSinks :: !(IORef [WeakCell])
   }
 
 -- The cache of a cell may be 'Empty' if the cell's value has not yet been
@@ -129,58 +131,57 @@ unsafeGetEnv = Hap $ \ env -> pure (env, [])
 -- Allocate a fresh cell ID.
 newId :: Hap Id
 newId = Hap $ \ env -> do
-  x <- readIORef $ envNext env
-  writeIORef (envNext env) (x + 1)
-  pure (x, [])
+  next <- readIORef $ envNext env
+  writeIORef (envNext env) (next + 1)
+  pure (next, [])
 
 -- Allocate a new cell containing the given expression.
-cell :: Hap a -> Hap (Cell a)
-cell exp = do
-  n <- newId
-  Hap $ \ env -> do
-    code <- newIORef exp
+new :: Hap a -> Hap (Cell a)
+new action = do
+  id <- newId
+  Hap $ \ _env -> do
+    expression <- newIORef action
     cache <- newIORef Empty
-    reads <- newIORef []
-    observers <- newIORef []
+    sources <- newIORef []
+    sinks <- newIORef []
     let
       cell = Cell
-        { cellId = n
-        , cellExpression = code
+        { cellId = id
+        , cellExpression = expression
         , cellCache = cache
-        , cellReads = reads
-        , cellObservers = observers
+        , cellSources = sources
+        , cellSinks = sinks
         }
     pure (cell, [])
 
 -- Get the value of a cell.
 get :: Cell a -> Hap a
-get c = Hap $ \ env -> do
-  cache <- readIORef (cellCache c)
+get cell = Hap $ \ env -> do
+  cache <- readIORef (cellCache cell)
   case cache of
-    Full v -> pure (v, [SomeCell c])
+    Full v -> pure (v, [SomeCell cell])
     Empty -> do
       -- Replace the cache with a black hole during evaluation to detect
       -- reference cycles.
-      writeIORef (cellCache c) Blackhole
-      (v, ds) <- join $ unHap <$> readIORef (cellExpression c) <*> pure env
-      writeIORef (cellCache c) (Full v)
-      writeIORef (cellReads c) ds
-      wc <- makeWeakCell c
-      forM_ ds $ \ (SomeCell d) -> modifyIORef' (cellObservers d) (wc :)
-      pure (v, [SomeCell c])
-    Blackhole -> throwIO $ Cycle $ SomeCell c
+      writeIORef (cellCache cell) Blackhole
+      (v, ds) <- join $ unHap <$> readIORef (cellExpression cell) <*> pure env
+      writeIORef (cellCache cell) (Full v)
+      writeIORef (cellSources cell) ds
+      wc <- makeWeakCell cell
+      forM_ ds $ \ (SomeCell d) -> modifyIORef' (cellSinks d) (wc :)
+      pure (v, [SomeCell cell])
+    Blackhole -> throwIO $ Cycle $ SomeCell cell
 
 -- Set the value of a cell to a new expression.
 set :: Cell a -> Hap a -> Hap ()
-set c exp = Hap $ \ env -> do
-  writeIORef (cellExpression c) exp
-  let sc = SomeCell c
-  invalidate env sc
+set cell action = Hap $ \ env -> do
+  writeIORef (cellExpression cell) action
+  invalidate env $ SomeCell cell
   pure ((), [])
 
 -- Get the ID of a cell with a hidden type.
 someCellId :: SomeCell -> Id
-someCellId (SomeCell c) = cellId c
+someCellId (SomeCell cell) = cellId cell
 
 -- Get the ID of a weak cell if it hasn't expired.
 weakCellId :: WeakCell -> IO (Maybe Id)
@@ -188,14 +189,14 @@ weakCellId = fmap (fmap someCellId) . strengthen
 
 -- Make a weak reference to a cell.
 makeWeakCell :: Cell a -> IO WeakCell
-makeWeakCell c = WeakCell <$> mkWeakPtr c Nothing
+makeWeakCell cell = WeakCell <$> mkWeakPtr cell Nothing
 
 -- Convert a weak cell into a cell reference if it hasn't expired.
 strengthen :: WeakCell -> IO (Maybe SomeCell)
 strengthen (WeakCell wc) = do
   mc <- deRefWeak wc
   pure $ case mc of
-    Just c -> Just $ SomeCell c
+    Just cell -> Just $ SomeCell cell
     Nothing -> Nothing
 
 --------------------------------------------------------------------------------
@@ -231,7 +232,7 @@ onSet cells = on (IntSet.fromList $ map cellId cells) . Set
 onChange :: (Eq a) => [Cell a] -> Hap () -> Hap Id
 onChange cells action = do
   values <- mapM get cells
-  state <- cell $ pure values
+  state <- new $ pure values
   onSet cells $ do
     values' <- mapM get cells
     state' <- get state
@@ -240,24 +241,24 @@ onChange cells action = do
 
 -- Remove an observer from a cell.
 removeObserver :: SomeCell -> SomeCell -> IO ()
-removeObserver o (SomeCell c) = do
-  observers <- readIORef (cellObservers c)
+removeObserver o (SomeCell cell) = do
+  observers <- readIORef (cellSinks cell)
   observers' <- flip filterM observers $ \ o' -> do
     mi <- weakCellId o'
     case mi of
       Just i -> pure (someCellId o /= i)
       -- Remove expired observers as a side effect.
       Nothing -> pure False
-  writeIORef (cellObservers c) observers'
+  writeIORef (cellSinks cell) observers'
 
 -- Invalidate the dependencies and dependents of a cell.
 invalidate :: Env -> SomeCell -> IO ()
-invalidate env sc@(SomeCell c) = do
-  os <- readIORef $ cellObservers c
-  rs <- readIORef $ cellReads c
-  writeIORef (cellObservers c) []
-  writeIORef (cellCache c) Empty
-  writeIORef (cellReads c) []
+invalidate env sc@(SomeCell cell) = do
+  os <- readIORef $ cellSinks cell
+  rs <- readIORef $ cellSources cell
+  writeIORef (cellSinks cell) []
+  writeIORef (cellCache cell) Empty
+  writeIORef (cellSources cell) []
   forM_ rs $ removeObserver sc
   forM_ os $ invalidateWeak env
   notifySet env sc
@@ -268,12 +269,12 @@ invalidateWeak env = mapM_ (invalidate env) <=< strengthen
 
 -- Notify the environment that a cell was written.
 notifySet :: Env -> SomeCell -> IO ()
-notifySet env sc@(SomeCell c) = do
-  let i = someCellId sc
+notifySet env someCell = do
+  let notifiedId = someCellId someCell
   listeners <- readIORef $ envListeners env
   -- Listeners are evaluated in the order they were added.
-  forM_ (reverse listeners) $ \ (n, cells, handler) -> do
-    when (IntSet.member i cells) $ case handler of
+  forM_ (reverse listeners) $ \ (_listenerId, cells, handler) -> do
+    when (notifiedId `IntSet.member` cells) $ case handler of
       Set action -> enqueue env action
       _ -> pure ()
 
@@ -299,16 +300,16 @@ sequencePoint env = do
 -- Map over the result of an expression.
 instance Functor Hap where
   fmap f (Hap action) = Hap $ \ env -> do
-    (result, reads) <- action env
-    pure (f result, reads)
+    (result, sources) <- action env
+    pure (f result, sources)
 
 -- Embed values in an expression or join expressions by function application.
 instance Applicative Hap where
-  pure x = Hap (\ env -> pure (x, []))
+  pure x = Hap (\ _env -> pure (x, []))
   Hap mf <*> Hap mx = Hap $ \ env -> do
-    (f, reads) <- mf env
-    (x, reads') <- mx env
-    pure (f x, union reads reads')
+    (f, sources) <- mf env
+    (x, sources') <- mx env
+    pure (f x, union sources sources')
 
 -- Sequence expressions, introducing a sequence point to flush the queue.
 instance Monad Hap where
@@ -326,7 +327,7 @@ instance Monad Hap where
 -- internally. It also allows weak cel references: an expression can read a cell
 -- but not record the dependency by wrapping the read in 'liftIO' + 'run'.
 instance MonadIO Hap where
-  liftIO action = Hap $ \ env -> do
+  liftIO action = Hap $ \ _env -> do
     result <- action
     pure (result, [])
 
@@ -336,9 +337,9 @@ instance MonadFix Hap where
   mfix action = Hap $ \ env -> do
     signal <- newEmptyMVar
     argument <- unsafeInterleaveIO $ takeMVar signal
-    (result, reads) <- unHap (action argument) env
+    (result, sources) <- unHap (action argument) env
     putMVar signal result
-    pure (result, reads)
+    pure (result, sources)
 
 instance Exception Cycle
 
@@ -349,7 +350,7 @@ instance Show Cycle where
     ]
 
 instance Show SomeCell where
-  show (SomeCell c) = "#" ++ show (cellId c)
+  show (SomeCell cell) = "#" ++ show (cellId cell)
 
 -- The union of two sets of cells with hidden types, removing duplicates.
 union :: [SomeCell] -> [SomeCell] -> [SomeCell]
