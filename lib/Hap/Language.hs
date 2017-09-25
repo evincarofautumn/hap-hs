@@ -100,12 +100,8 @@ data Literal
   deriving (Eq, Ord, Show)
 
 data UnaryOperator
-  = UnaryAddress
-  | UnaryDecrement
-  | UnaryDereference
-  | UnaryEach
+  = UnaryEach
   | UnaryEvery
-  | UnaryIncrement
   | UnaryMinus
   | UnaryNot
   | UnaryPlus
@@ -130,11 +126,9 @@ data BinaryOperator
   | BinaryNotElement
   -- Conjunctive
   | BinaryAnd
-  | BinaryIntersect
   -- Disjunctive
   | BinaryOr
   | BinaryXor
-  | BinaryUnion
   -- Implicative
   | BinaryImplies
   -- Assignment
