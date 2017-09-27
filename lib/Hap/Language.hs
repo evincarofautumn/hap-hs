@@ -107,6 +107,47 @@ data UnaryOperator
   | UnaryPlus
   deriving (Eq, Ord, Show)
 
+-- Note [Each and Every]:
+--
+-- The 'each' and 'every' operators are syntactic sugar for common types of
+-- loops; when used in an expression, they cause the expression to be desugared
+-- to a loop over their arguments. Semantically, multiple 'each' operators
+-- produce a single loop over the contents of their operands zipped together in
+-- the order they appear in the source, while multiple 'every' operators
+-- generate nested loops, also in order of appearance. If only a single 'each'
+-- or 'every' appears, the two are otherwise equivalent. For example:
+--
+--     output(each xs);
+--     =>
+--     for each _x in (xs) output(_x);
+--
+--     output(each xs + each ys);
+--     =>
+--     for each (_x, _y) in (xs, ys) output(_x + _y);
+--
+--     output(each xs + each ys + each zs);
+--     =>
+--     for each (_x, _y, _z) in (xs, ys, zs) output(_x + _y + _z);
+--
+--     output(every xs);
+--     =>
+--     for each _x in (xs) output(_x);
+--
+--     output(every xs * every ys);
+--     =>
+--     for each _x in (xs)
+--       for each _y in (ys)
+--         output(_x * _y);
+--
+--     output(every xs * every ys + every zs);
+--     =>
+--     for each _x in (xs)
+--       for each _y in (ys)
+--         for each _z in (zs)
+--           output(_x * _y + _z);
+--
+-- TODO: The compiler should perform this translation during a desugaring step.
+
 data BinaryOperator
   -- Multiplicative
   = BinaryMultiply
