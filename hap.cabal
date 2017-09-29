@@ -35,7 +35,9 @@ executable hap
                      , containers
                      , hap
                      , haskeline
+                     , optparse-applicative
                      , parsec
+                     , sdl2
                      , text
 
 test-suite hap-test

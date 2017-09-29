@@ -27,6 +27,7 @@ import Data.IntMap (IntMap)
 import Data.List (foldl', intercalate)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
+import Data.Monoid
 import Data.Set (Set)
 import Data.Text (Text)
 import GHC.Exts (IsString(..))
@@ -49,6 +50,10 @@ import qualified Text.Parsec.Expr as Expr
 
 data Program = Program [Statement]
   deriving (Eq, Show)
+
+instance Monoid Program where
+  mempty = Program mempty
+  mappend (Program a) (Program b) = Program (a <> b)
 
 data Statement
   = AtomicStatement !SourcePos !Statement
