@@ -52,6 +52,12 @@ import qualified Text.Parsec.Expr as Expr
 data Program = Program [Statement]
   deriving (Eq, Show)
 
+instance Semigroup Program where
+  Program a <> Program b = Program (a <> b)
+
+instance Monoid Program where
+  mempty = Program mempty
+
 data Statement
   = AtomicStatement !SourcePos !Statement
   | AfterStatement !SourcePos !Expression !Statement
