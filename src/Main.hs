@@ -2,7 +2,7 @@ module Main (main) where
 
 import Control.Monad.IO.Class (liftIO)
 import Data.List (stripPrefix)
-import Hap.Compiler (compile)
+import Hap.Compiler (compile, newEmptyContext)
 import Hap.Language (parseProgram)
 import Hap.Runtime (newEmptyEnv, run)
 import System.Console.Haskeline (getInputLine, outputStrLn, runInputT)
@@ -30,10 +30,10 @@ main = do
 
 runRepl :: IO ()
 runRepl = do
-  env0 <- newEmptyEnv
-  runInputT Haskeline.defaultSettings (loop env0)
-  where
-    loop env = do
+  context <- newEmptyContext
+  env <- newEmptyEnv
+  let
+    loop = do
       entry <- getInputLine "> "
       case entry of
         Nothing -> do
@@ -44,16 +44,18 @@ runRepl = do
               outputStrLn "Bye!"
             _ -> do
               outputStrLn $ "Unknown command '" ++ command ++ "'."
-              loop env
+              loop
           Nothing -> do
             case parseProgram "<interactive>" line of
               Left parseError -> do
                 outputStrLn $ show parseError
-                loop env
+                loop
               Right program -> do
-                case compile program of
+                case compile context program of
                   Left compileError -> do
                     outputStrLn compileError
                   Right compiled -> do
                     liftIO $ run env compiled
-                loop env
+                loop
+
+  runInputT Haskeline.defaultSettings loop

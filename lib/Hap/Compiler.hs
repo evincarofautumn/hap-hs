@@ -1,14 +1,18 @@
 {-# LANGUAGE RecursiveDo #-}
 
 module Hap.Compiler
-  ( compile
+  ( SymbolMap
+  , Context
+  , compile
+  , newEmptyContext
   ) where
 
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Fixed (mod')
-import Data.List ((\\), intersect, union)
-import Data.Maybe (fromJust)
+import Data.IORef
+import Data.List ((\\), foldl', intersect, union)
+import Data.Map (Map)
 import Data.Monoid
 import Hap.Language
 import Hap.Runtime
@@ -16,20 +20,35 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 
-compile :: Program -> Either CompileError (Hap ())
-compile (Program statements)
-  = fmap sequence_ (traverse compileStatement statements)
+type SymbolMap = Map Identifier (Cell Value)
+
+data Context = Context
+  { contextModifySymbols :: !((SymbolMap -> SymbolMap) -> Hap ())
+  , contextReadSymbols :: !(Hap SymbolMap)
+  }
+
+newEmptyContext :: IO Context
+newEmptyContext = do
+  symbols <- newIORef mempty
+  pure Context
+    { contextModifySymbols = \ f -> liftIO $ modifyIORef' symbols f
+    , contextReadSymbols = liftIO $ readIORef symbols
+    }
+
+compile :: Context -> Program -> Either CompileError (Hap ())
+compile context (Program statements)
+  = fmap sequence_ (traverse (compileStatement context) statements)
 
 type CompileError = String
 
-compileStatement :: Statement -> Either CompileError (Hap ())
-compileStatement statement = case statement of
+compileStatement :: Context -> Statement -> Either CompileError (Hap ())
+compileStatement context statement = case statement of
 {-
   AtomicStatement !SourcePos !Statement
 -}
   AfterStatement _pos condition body -> do
-    compiledCondition <- compileExpression condition
-    compiledBody <- compileStatement body
+    compiledCondition <- compileExpression context condition
+    compiledBody <- compileStatement context body
     pure $ do
       -- FIXME: Should be an expression to return the ID?
       _id <- after compiledCondition compiledBody
@@ -38,12 +57,12 @@ compileStatement statement = case statement of
   AsLongAsStatement !SourcePos !Expression !Statement
 -}
   BlockStatement _pos statements -> do
-    compiledStatements <- traverse compileStatement statements
+    compiledStatements <- traverse (compileStatement context) statements
     pure $ sequence_ compiledStatements
   EmptyStatement _pos -> do
     pure $ pure ()
   ExpressionStatement _pos expression -> do
-    compiledExpression <- compileExpression expression
+    compiledExpression <- compileExpression context expression
     pure $ do
       _ <- compiledExpression
       pure ()
@@ -60,14 +79,53 @@ compileStatement statement = case statement of
   -- OnRemoveStatement !Identifier !Identifier !Statement
   RedoStatement !SourcePos !(Maybe Identifier)
   ReturnStatement !SourcePos !(Maybe Expression)
-  VarStatement !SourcePos [(Identifier, Maybe Signature, Maybe Expression)]
+-}
+
+  VarStatement _pos bindings -> do
+    compiledBindings <- traverse compileBinding bindings
+    let modifySymbols = contextModifySymbols context
+    pure $ do
+      initializers <- traverse runInitializer compiledBindings
+      modifySymbols $ \ symbols0 -> foldl'
+        (\ symbols (identifier, value) -> Map.insert identifier value symbols)
+        symbols0
+        initializers
+    where
+
+      compileBinding
+        :: (Identifier, Maybe Signature, Maybe Expression)
+        -> Either CompileError (Identifier, Maybe Signature, Maybe (Hap Value))
+      compileBinding (identifier, signature, initializer) = case initializer of
+        Just expression -> do
+          compiledExpression <- compileExpression context expression
+          pure (identifier, signature, Just compiledExpression)
+        Nothing -> do
+          pure (identifier, signature, Nothing)
+
+      runInitializer
+        :: (Identifier, Maybe Signature, Maybe (Hap Value))
+        -> Hap (Identifier, Cell Value)
+      runInitializer (identifier, signature, initializer) = case initializer of
+        Just expression -> do
+          value <- expression
+          -- FIXME: This copies the current value of the initializer; should it
+          -- generate a reactive binding instead? I.e., after "var x = y", if
+          -- 'y' changes, should 'x' change accordingly?
+          cell <- new $ pure value
+          -- TODO: Check value against type signature.
+          pure (identifier, cell)
+        Nothing -> do
+          cell <- new $ pure NullValue
+          pure (identifier, cell)
+
+{-
   WheneverStatement !SourcePos !Expression !Statement
   WhileStatement !SourcePos !Expression !Statement
 -}
   _ -> Left $ "TODO: compile statement: " ++ show statement
 
-compileExpression :: Expression -> Either CompileError (Hap Value)
-compileExpression expression = case expression of
+compileExpression :: Context -> Expression -> Either CompileError (Hap Value)
+compileExpression context expression = case expression of
   LiteralExpression _pos literal -> case literal of
     BooleanLiteral value -> pure $ pure $ BooleanValue value
     FloatLiteral value -> pure $ pure $ FloatValue value
@@ -75,7 +133,7 @@ compileExpression expression = case expression of
     TextLiteral value -> pure $ pure $ TextValue value
     NullLiteral -> pure $ pure NullValue
     ListLiteral elements -> do
-      compiledElements <- traverse compileExpression elements
+      compiledElements <- traverse (compileExpression context) elements
       pure $ do
         elementValues <- sequence compiledElements
         pure $ ListValue elementValues
@@ -86,27 +144,34 @@ compileExpression expression = case expression of
         pure $ MapValue $ Map.fromList pairValues
       where
         compilePair (key, value) = (,)
-          <$> compileExpression key
-          <*> compileExpression value
+          <$> compileExpression context key
+          <*> compileExpression context value
         evalPair (key, value) = (,) <$> key <*> value
     SetLiteral elements -> do
-      compiledElements <- traverse compileExpression elements
+      compiledElements <- traverse (compileExpression context) elements
       pure $ do
         elementValues <- sequence compiledElements
         pure $ SetValue $ Set.fromList elementValues
     FunctionLiteral name parameters result body -> do
-      compiledBody <- compileStatement body
+      compiledBody <- compileStatement context body
       pure $ pure $ FunctionValue name parameters result body compiledBody
   IdentifierExpression _pos identifier -> do
-    -- TODO: Look up names in scope.
-    pure $ pure $ NativeValue $ fromJust $ nativeId identifier
+    let readSymbols = contextReadSymbols context
+    pure $ do
+      symbols <- readSymbols
+      case Map.lookup identifier symbols of
+        Just cell -> get cell
+        Nothing -> case nativeId identifier of
+          Just native -> pure $ NativeValue native
+          -- TODO: Raise 'Unbound' Hap error.
+          Nothing -> error $ concat ["unbound name '", show identifier, "'"]
 {-
   SubscriptExpression !SourcePos !Expression [Expression]
   DotExpression !SourcePos !Expression !Identifier
 -}
   CallExpression _pos function arguments -> do
-    compiledFunction <- compileExpression function
-    compiledArguments <- traverse compileExpression arguments
+    compiledFunction <- compileExpression context function
+    compiledArguments <- traverse (compileExpression context) arguments
     pure $ do
       functionValue <- compiledFunction
       argumentValues <- sequence compiledArguments
@@ -120,10 +185,10 @@ compileExpression expression = case expression of
   LetExpression !SourcePos [(Identifier, Maybe Signature, Expression)] !Expression
 -}
   GroupExpression _pos body -> do
-    compiledBody <- compileExpression body
+    compiledBody <- compileExpression context body
     pure $ compiledBody
   UnaryExpression _pos operator operand -> do
-    compiledOperand <- compileExpression operand
+    compiledOperand <- compileExpression context operand
     pure $ do
       operandValue <- compiledOperand
       pure $ case operator of
@@ -142,8 +207,8 @@ compileExpression expression = case expression of
           FloatValue{} -> operandValue
           _ -> error "argument of unary '+' not a number"
   BinaryExpression _pos operator first second -> do
-    compiledFirst <- compileExpression first
-    compiledSecond <- compileExpression second
+    compiledFirst <- compileExpression context first
+    compiledSecond <- compileExpression context second
     pure $ case operator of
 
       -- TODO: function * function = compose with multiplication
@@ -384,8 +449,28 @@ compileExpression expression = case expression of
               _ -> error "invalid argument to binary 'implies'"
           _ -> error "invalid argument to binary 'implies'"
 
-      -- set cell
-      BinaryAssign -> error "TODO: implement binary '<-'"
+      BinaryAssign -> do
+        let
+          readSymbols = contextReadSymbols context
+          modifySymbols = contextModifySymbols context
+        -- FIXME: We already compiled the first operand, but we ignore that
+        -- compilation here and reinterpret it as an lvalue.
+        case first of
+          IdentifierExpression _ identifier -> do
+            symbols <- readSymbols
+            case Map.lookup identifier symbols of
+              Just{} -> pure ()
+              -- TODO: Raise 'Unbound' Hap error.
+              Nothing -> error $ concat ["unbound name '", show identifier, "'"]
+            secondValue <- compiledSecond
+            -- FIXME: This copies the current value of the source of the
+            -- assignment; should it generate a reactive binding instead? Or
+            -- should there be a different assignment operator for that?
+            cell <- new $ pure secondValue
+            modifySymbols $ Map.insert identifier cell
+            pure NullValue
+          -- TODO: Raise Hap error.
+          _ -> error $ "invalid target of assignment: " ++ show first
 
   _ -> Left $ "TODO: compile expression: " ++ show expression
 
