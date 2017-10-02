@@ -450,24 +450,21 @@ compileExpression context expression = case expression of
           _ -> error "invalid argument to binary 'implies'"
 
       BinaryAssign -> do
-        let
-          readSymbols = contextReadSymbols context
-          modifySymbols = contextModifySymbols context
+        let readSymbols = contextReadSymbols context
         -- FIXME: We already compiled the first operand, but we ignore that
         -- compilation here and reinterpret it as an lvalue.
         case first of
           IdentifierExpression _ identifier -> do
             symbols <- readSymbols
             case Map.lookup identifier symbols of
-              Just{} -> pure ()
+              Just cell -> do
+                -- FIXME: This copies the current value of the source of the
+                -- assignment; should it generate a reactive binding instead? Or
+                -- should there be a different assignment operator for that?
+                secondValue <- compiledSecond
+                set cell $ pure secondValue
               -- TODO: Raise 'Unbound' Hap error.
               Nothing -> error $ concat ["unbound name '", show identifier, "'"]
-            secondValue <- compiledSecond
-            -- FIXME: This copies the current value of the source of the
-            -- assignment; should it generate a reactive binding instead? Or
-            -- should there be a different assignment operator for that?
-            cell <- new $ pure secondValue
-            modifySymbols $ Map.insert identifier cell
             pure NullValue
           -- TODO: Raise Hap error.
           _ -> error $ "invalid target of assignment: " ++ show first
