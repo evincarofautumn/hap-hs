@@ -58,14 +58,17 @@ compileStatement context statement = case statement of
 -}
   BlockStatement _pos statements -> do
     compiledStatements <- traverse (compileStatement context) statements
-    pure $ sequence_ compiledStatements
+    pure $ do
+      sequence_ compiledStatements
+      sequencePoint
   EmptyStatement _pos -> do
     pure $ pure ()
   ExpressionStatement _pos expression -> do
     compiledExpression <- compileExpression context expression
     pure $ do
       _ <- compiledExpression
-      pure ()
+      sequencePoint
+
 {-
   ForAllStatement !SourcePos !Identifier !Expression !Statement
   ForEachStatement !SourcePos !Identifier !Expression !Statement
@@ -108,6 +111,7 @@ compileStatement context statement = case statement of
       runInitializer (identifier, signature, initializer) = case initializer of
         Just expression -> do
           value <- expression
+          sequencePoint
           -- FIXME: This copies the current value of the initializer; should it
           -- generate a reactive binding instead? I.e., after "var x = y", if
           -- 'y' changes, should 'x' change accordingly?

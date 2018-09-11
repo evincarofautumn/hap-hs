@@ -17,6 +17,7 @@ module Hap.Runtime
   , onChange
   , onSet
   , run
+  , sequencePoint
   , set
   , stop
   , unsafeGetEnv
@@ -287,11 +288,14 @@ enqueue env action = do
 -- further actions, the whole queue is flushed at once to prevent infinite
 -- loops; the feedback loop between enqueuing and flushing actions is what
 -- drives evaluation.
-sequencePoint :: Env -> IO ()
-sequencePoint env = do
+sequencePointIO :: Env -> IO ()
+sequencePointIO env = do
   queue <- readIORef (envQueue env)
   writeIORef (envQueue env) []
   forM_ (reverse queue) $ run env
+
+sequencePoint :: Hap ()
+sequencePoint = liftIO . sequencePointIO =<< unsafeGetEnv
 
 --------------------------------------------------------------------------------
 -- Typeclass Instances
@@ -316,7 +320,7 @@ instance Monad Hap where
   return = pure
   Hap cmd >>= f = Hap $ \ env -> do
     (a, cs) <- cmd env
-    sequencePoint env
+    sequencePointIO env
     (b, ds) <- unHap (f a) env
     pure (b, union cs ds)
 
