@@ -122,8 +122,14 @@ compileStatement context statement = case statement of
           cell <- new $ pure NullValue
           pure (identifier, cell)
 
+  WheneverStatement _pos condition body -> do
+    compiledCondition <- compileExpression context condition
+    compiledBody <- compileStatement context body
+    pure $ do
+      _ <- whenever compiledCondition compiledBody
+      pure ()
+
 {-
-  WheneverStatement !SourcePos !Expression !Statement
   WhileStatement !SourcePos !Expression !Statement
 -}
   _ -> Left $ "TODO: compile statement: " ++ show statement
