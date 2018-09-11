@@ -32,6 +32,7 @@ import Data.Text (Text)
 import GHC.Exts (IsString(..))
 import Hap.Operators
 import Hap.Runtime (Env, Hap)
+import System.IO (hFlush, stdout)
 import Text.Parsec (ParseError, (<?>))
 import Text.Parsec.Expr (buildExpressionParser)
 import Text.Parsec.Pos (SourcePos)
@@ -798,6 +799,7 @@ native :: [(Identifier, NativeFunction)]
 native =
   [ (,) "output" $ \ _env args -> do
     mapM_ print args
+    hFlush stdout
     pure NullValue
   ]
 
