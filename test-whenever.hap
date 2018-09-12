@@ -1,8 +1,0 @@
-output ("hello world");
-var x = 1;
-whenever (x = 2) { output ("beep"); }
-x <- 3;
-x <- 2;
-x <- 3;
-x <- 2;
-x <- 2;

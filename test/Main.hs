@@ -2,8 +2,12 @@
 
 module Main (main) where
 
+import Control.Monad (void)
+import Data.IORef
+import Hap.Compiler
 import Hap.Language
-import Test.HUnit (assertBool)
+import Hap.Runtime
+import Test.HUnit (assertBool, assertFailure)
 import Test.Hspec (Spec, describe, hspec, specify)
 import Text.Parsec (ParseError)
 
@@ -1352,7 +1356,46 @@ spec = do
           ]) -> True
         _ -> False
 
+  describe "evaluates" $ do
+
+    specify "basic output" $ do
+
+      evalTest "output (\"hello\");" (== "hello\n")
+
+      evalTest "output (2 + 2);" (== "4\n")
+
+    specify "'whenever' statement" $ do
+
+      evalTest "\
+       \var x = 1;\n\
+       \whenever (x = 2) { output (\"beep\"); }\n\
+       \x <- 3;\n\
+       \x <- 2;\n\
+       \x <- 3;\n\
+       \x <- 2;\n\
+       \x <- 2;\n\
+       \\&"
+       (== "\
+         \beep\n\
+         \beep\n\
+         \\&")
+
 parseTest :: String -> (Either ParseError Program -> Bool) -> IO ()
 parseTest source successful = do
   let result = parseProgram "test" source
   assertBool (concat [show source, " => ", show result]) $ successful result
+
+evalTest :: String -> (String -> Bool) -> IO ()
+evalTest source successful = do
+  context <- newEmptyContext
+  output <- newIORef []
+  let logOutput = modifyIORef' output . (:)
+  env <- newEmptyEnv logOutput []
+  case parseProgram "test" source of
+    Left parseError -> assertFailure (show parseError)
+    Right program -> case compile context program of
+      Left compileError -> assertFailure compileError
+      Right compiled -> do
+        void $ run env compiled
+        result <- concat . reverse <$> readIORef output
+        assertBool (concat [show source, " => ", show result]) $ successful result
