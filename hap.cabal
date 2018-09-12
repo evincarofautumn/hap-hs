@@ -25,6 +25,7 @@ library
                      , containers
                      , parsec
                      , text
+                     , transformers
 
 executable hap
   hs-source-dirs:      src

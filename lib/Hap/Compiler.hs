@@ -1,4 +1,5 @@
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Hap.Compiler
   ( SymbolMap
@@ -7,27 +8,26 @@ module Hap.Compiler
   , newEmptyContext
   ) where
 
-import Control.Monad (when)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad (void, when)
+import Control.Monad.IO.Class
 import Data.Fixed (mod')
 import Data.IORef
 import Data.List ((\\), foldl', intersect, union)
 import Data.Map (Map)
-import Data.Monoid
 import Hap.Language
 import Hap.Runtime
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 
-type SymbolMap = Map Identifier (Cell Value)
+type SymbolMap m = Map Identifier (Cell m Value)
 
-data Context = Context
-  { contextModifySymbols :: !((SymbolMap -> SymbolMap) -> Hap ())
-  , contextReadSymbols :: !(Hap SymbolMap)
+data Context m = Context
+  { contextModifySymbols :: !((SymbolMap m -> SymbolMap m) -> HapT m ())
+  , contextReadSymbols :: !(HapT m (SymbolMap m))
   }
 
-newEmptyContext :: IO Context
+newEmptyContext :: (MonadIO m) => IO (Context m)
 newEmptyContext = do
   symbols <- newIORef mempty
   pure Context
@@ -35,13 +35,13 @@ newEmptyContext = do
     , contextReadSymbols = liftIO $ readIORef symbols
     }
 
-compile :: Context -> Program -> Either CompileError (Hap ())
+compile :: (MonadIO m) => Context m -> Program -> Either CompileError (HapT m ())
 compile context (Program statements)
   = fmap sequence_ (traverse (compileStatement context) statements)
 
 type CompileError = String
 
-compileStatement :: Context -> Statement -> Either CompileError (Hap ())
+compileStatement :: forall m. (MonadIO m) => Context m -> Statement -> Either CompileError (HapT m ())
 compileStatement context statement = case statement of
 {-
   AtomicStatement !SourcePos !Statement
@@ -60,13 +60,13 @@ compileStatement context statement = case statement of
     compiledStatements <- traverse (compileStatement context) statements
     pure $ do
       sequence_ compiledStatements
-      sequencePoint
+      -- sequencePoint
   EmptyStatement _pos -> do
     pure $ pure ()
   ExpressionStatement _pos expression -> do
     compiledExpression <- compileExpression context expression
     pure $ do
-      _ <- compiledExpression
+      void compiledExpression
       sequencePoint
 
 {-
@@ -97,7 +97,7 @@ compileStatement context statement = case statement of
 
       compileBinding
         :: (Identifier, Maybe Signature, Maybe Expression)
-        -> Either CompileError (Identifier, Maybe Signature, Maybe (Hap Value))
+        -> Either CompileError (Identifier, Maybe Signature, Maybe (HapT m Value))
       compileBinding (identifier, signature, initializer) = case initializer of
         Just expression -> do
           compiledExpression <- compileExpression context expression
@@ -106,8 +106,8 @@ compileStatement context statement = case statement of
           pure (identifier, signature, Nothing)
 
       runInitializer
-        :: (Identifier, Maybe Signature, Maybe (Hap Value))
-        -> Hap (Identifier, Cell Value)
+        :: (Identifier, Maybe Signature, Maybe (HapT m Value))
+        -> HapT m (Identifier, Cell m Value)
       runInitializer (identifier, signature, initializer) = case initializer of
         Just expression -> do
           value <- expression
@@ -115,11 +115,11 @@ compileStatement context statement = case statement of
           -- FIXME: This copies the current value of the initializer; should it
           -- generate a reactive binding instead? I.e., after "var x = y", if
           -- 'y' changes, should 'x' change accordingly?
-          cell <- new $ pure value
+          cell <- new (Just $ Text.unpack $ identifierText identifier) $ pure value
           -- TODO: Check value against type signature.
           pure (identifier, cell)
         Nothing -> do
-          cell <- new $ pure NullValue
+          cell <- new (Just $ Text.unpack $ identifierText identifier) $ pure NullValue
           pure (identifier, cell)
 
   WheneverStatement _pos condition body -> do
@@ -134,7 +134,7 @@ compileStatement context statement = case statement of
 -}
   _ -> Left $ "TODO: compile statement: " ++ show statement
 
-compileExpression :: Context -> Expression -> Either CompileError (Hap Value)
+compileExpression :: (MonadIO m) => Context m -> Expression -> Either CompileError (HapT m Value)
 compileExpression context expression = case expression of
   LiteralExpression _pos literal -> case literal of
     BooleanLiteral value -> pure $ pure $ BooleanValue value
@@ -162,9 +162,11 @@ compileExpression context expression = case expression of
       pure $ do
         elementValues <- sequence compiledElements
         pure $ SetValue $ Set.fromList elementValues
+{-
     FunctionLiteral name parameters result body -> do
       compiledBody <- compileStatement context body
       pure $ pure $ FunctionValue name parameters result body compiledBody
+-}
   IdentifierExpression _pos identifier -> do
     let readSymbols = contextReadSymbols context
     pure $ do
@@ -187,9 +189,9 @@ compileExpression context expression = case expression of
       argumentValues <- sequence compiledArguments
       call functionValue argumentValues
     where
-      call (NativeValue f) xs = do
-        env <- unsafeGetEnv
-        liftIO $ nativeFunction f env xs
+      call (NativeValue f) xs = HapT $ \ env -> do
+        result <- nativeFunction f env xs
+        pure (result, [])
       call _ _ = error "TODO: call non-native function"
 {-
   LetExpression !SourcePos [(Identifier, Maybe Signature, Expression)] !Expression
@@ -500,16 +502,16 @@ compileExpression context expression = case expression of
 -- can be stopped before the action has had a chance to run.
 --
 -- TODO: Implement this as a function or macro within Hap.
-after :: Hap Value -> Hap () -> Hap (Maybe Id)
+after :: (MonadIO m) => HapT m Value -> HapT m () -> HapT m (Maybe Id)
 after condition action = do
-  current <- new condition
+  current <- new (Just "'after' condition") condition
   initial <- get current
   if booleanValue initial
     then do
       action
       pure Nothing
     else do
-      state <- new $ pure False
+      state <- new (Just "'after' state") $ pure False
       rec
         handler <- whenever condition $ do
           state' <- get state
@@ -522,11 +524,11 @@ after condition action = do
 -- Add an action to be run whenever a condition becomes true, that is, when it
 -- changes from false to true. If true initially, the action is also run as soon
 -- as the handler is added.
-whenever :: Hap Value -> Hap () -> Hap Id
+whenever :: (MonadIO m) => HapT m Value -> HapT m () -> HapT m Id
 whenever condition action = do
-  current <- new condition
+  current <- new (Just "'whenever' condition") condition
   initial <- get current
-  previous <- new $ pure initial
+  previous <- new (Just "'whenever' previous state") $ pure initial
   when (booleanValue initial) action
   onChange [current] $ do
     previous' <- get previous

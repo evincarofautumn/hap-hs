@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Hap.Language
   ( BinaryOperator(..)
@@ -31,8 +32,7 @@ import Data.Set (Set)
 import Data.Text (Text)
 import GHC.Exts (IsString(..))
 import Hap.Operators
-import Hap.Runtime (Env, Hap)
-import System.IO (hFlush, stdout)
+import Hap.Runtime (Env(..))
 import Text.Parsec (ParseError, (<?>))
 import Text.Parsec.Expr (buildExpressionParser)
 import Text.Parsec.Pos (SourcePos)
@@ -694,12 +694,14 @@ data Value
   | SetValue !(Set Value)
   | NativeValue !NativeId
   -- TODO: Add static environment.
+{-
   | FunctionValue
     !(Maybe Identifier)
     [(Identifier, Maybe Signature, Maybe Expression)]
     !(Maybe Signature)
     !Statement
-    !(Hap ())
+    !(Hap IO ())
+-}
 
 instance Eq Value where
   BooleanValue a == BooleanValue b = a == b
@@ -712,8 +714,10 @@ instance Eq Value where
   SetValue a == SetValue b = a == b
   NativeValue a == NativeValue b = a == b
   -- Function values compare ignoring their compiled representation.
+{-
   FunctionValue a b c d _ == FunctionValue e f g h _
     = (a, b, c, d) == (e, f, g, h)
+-}
   _ == _ = False
 
 instance Ord Value where
@@ -728,8 +732,10 @@ instance Ord Value where
     (SetValue a, SetValue b) -> a `compare` b
     (NativeValue a, NativeValue b) -> a `compare` b
     -- Function values compare ignoring their compiled representation.
+{-
     (FunctionValue a b c d _, FunctionValue e f g h _)
       -> (a, b, c, d) `compare` (e, f, g, h)
+-}
     -- It would be possible to define an arbitrary ordering for comparisons
     -- between values of different types, but if this case is reached, it
     -- probably indicates a typechecker bug.
@@ -765,6 +771,7 @@ instance Show Value where
       , " }"
       ]
     NativeValue n -> show $ nativeName n
+{-
     FunctionValue name parameters result body _compiled -> concat
       [ "function"
       , case name of
@@ -789,29 +796,29 @@ instance Show Value where
             Just expression -> concat [" = ", show expression]
             Nothing -> ""
           ]
+-}
 
 newtype NativeId = NativeId Int
   deriving (Eq, Ord, Show)
 
-type NativeFunction = Env -> [Value] -> IO Value
+type NativeFunction m = Env m -> [Value] -> m Value
 
-native :: [(Identifier, NativeFunction)]
+native :: (Monad m) => [(Identifier, NativeFunction m)]
 native =
-  [ (,) "output" $ \ _env args -> do
-    mapM_ print args
-    hFlush stdout
+  [ (,) "output" $ \ env args -> do
+    mapM_ (envOutputStr env . (++ "\n") . show) args
     pure NullValue
   ]
 
 nativeIds :: Map Identifier NativeId
 nativeIds = Map.fromList
-  $ map fst native `zip` map NativeId [0..]
+  $ map fst (native @Identity) `zip` map NativeId [0..]
 
 nativeNames :: IntMap Identifier
 nativeNames = IntMap.fromList
-  $ [0..] `zip` map fst native
+  $ [0..] `zip` map fst (native @Identity)
 
-nativeFunctions :: IntMap NativeFunction
+nativeFunctions :: (Monad m) => IntMap (NativeFunction m)
 nativeFunctions = IntMap.fromList
   $ [0..] `zip` map snd native
 
@@ -822,6 +829,6 @@ nativeName :: NativeId -> Identifier
 nativeName (NativeId n) = fromMaybe (error "undefined native ID")
   $ IntMap.lookup n nativeNames
 
-nativeFunction :: NativeId -> NativeFunction
+nativeFunction :: (Monad m) => NativeId -> NativeFunction m
 nativeFunction (NativeId n) = fromMaybe (error "undefined native ID")
   $ IntMap.lookup n nativeFunctions

@@ -1,10 +1,12 @@
+{-# LANGUAGE TypeApplications #-}
+
 module Main (main) where
 
 import Control.Monad.IO.Class (liftIO)
 import Data.List (stripPrefix)
 import Hap.Compiler (compile, newEmptyContext)
 import Hap.Language (parseProgram)
-import Hap.Runtime (newEmptyEnv, run)
+import Hap.Runtime (Flag(..), newEmptyEnv, run)
 import System.Console.Haskeline (getInputLine, outputStrLn, runInputT)
 import System.Environment (getArgs)
 import System.Exit (ExitCode(..), exitWith)
@@ -29,12 +31,13 @@ main = do
       exitWith $ ExitFailure 1
 
 runRepl :: IO ()
-runRepl = do
-  context <- newEmptyContext
-  env <- newEmptyEnv
+runRepl = runInputT Haskeline.defaultSettings $ do
+  context <- liftIO (newEmptyContext @(Haskeline.InputT IO))
+  env <- liftIO $ newEmptyEnv Haskeline.outputStr [LoggingEnabledFlag]  -- []
   let
+    prompt = "> "  -- ""
     loop = do
-      entry <- getInputLine "> "
+      entry <- getInputLine prompt
       case entry of
         Nothing -> do
           outputStrLn "Bye!"
@@ -55,7 +58,6 @@ runRepl = do
                   Left compileError -> do
                     outputStrLn compileError
                   Right compiled -> do
-                    liftIO $ run env compiled
+                    run env compiled
                 loop
-
-  runInputT Haskeline.defaultSettings loop
+  loop
