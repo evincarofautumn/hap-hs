@@ -779,18 +779,18 @@ spec = do
 
       specify "'let' expressions" $ do
 
-        parseTest "let x = 1 in output(x);" $ \ program -> case program of
+        parseTest "let x = 1 in trace(x);" $ \ program -> case program of
           Right (Program
             [ ExpressionStatement _
               (LetExpression _
                 [("x", Nothing, LiteralExpression _ (IntegerLiteral 1))]
                 (CallExpression _
-                  (IdentifierExpression _ "output")
+                  (IdentifierExpression _ "trace")
                   [IdentifierExpression _ "x"]))
             ]) -> True
           _ -> False
 
-        parseTest "let x = 1, y = 2 in output(x + y);"
+        parseTest "let x = 1, y = 2 in trace(x + y);"
           $ \ program -> case program of
           Right (Program
             [ ExpressionStatement _
@@ -799,7 +799,7 @@ spec = do
                 , ("y", Nothing, LiteralExpression _ (IntegerLiteral 2))
                 ]
                 (CallExpression _
-                  (IdentifierExpression _ "output")
+                  (IdentifierExpression _ "trace")
                   [BinaryExpression _ BinaryAdd
                     (IdentifierExpression _ "x")
                     (IdentifierExpression _ "y")]))
@@ -840,7 +840,7 @@ spec = do
 
     specify "'after' statement" $ do
 
-      parseTest "after (player.score = 0)\n\toutput(\"You lost!\");"
+      parseTest "after (player.score = 0)\n\ttrace(\"You lost!\");"
         $ \ program -> case program of
         Right (Program
           [ AfterStatement _
@@ -851,7 +851,7 @@ spec = do
               (LiteralExpression _ (IntegerLiteral 0)))
             (ExpressionStatement _
               (CallExpression _
-                (IdentifierExpression _ "output")
+                (IdentifierExpression _ "trace")
                 [LiteralExpression _ (TextLiteral "You lost!")]))
           ]) -> True
         _ -> False
@@ -1165,68 +1165,68 @@ spec = do
 
     specify "'on' statements" $ do
 
-      parseTest "on set (x) output(\"x was set\");"
+      parseTest "on set (x) trace(\"x was set\");"
         $ \ program -> case program of
         Right (Program
           [ OnSetStatement _ ["x"]
             (ExpressionStatement _
               (CallExpression _
-                (IdentifierExpression _ "output")
+                (IdentifierExpression _ "trace")
                 [LiteralExpression _ (TextLiteral "x was set")]))
           ]) -> True
         _ -> False
 
-      parseTest "on set (x,) output(\"x was set\");"
+      parseTest "on set (x,) trace(\"x was set\");"
         $ \ program -> case program of
         Right (Program
           [ OnSetStatement _ ["x"]
             (ExpressionStatement _
               (CallExpression _
-                (IdentifierExpression _ "output")
+                (IdentifierExpression _ "trace")
                 [LiteralExpression _ (TextLiteral "x was set")]))
           ]) -> True
         _ -> False
 
-      parseTest "on set (x, y) output(\"x or y was set\");"
+      parseTest "on set (x, y) trace(\"x or y was set\");"
         $ \ program -> case program of
         Right (Program
           [ OnSetStatement _ ["x", "y"]
             (ExpressionStatement _
               (CallExpression _
-                (IdentifierExpression _ "output")
+                (IdentifierExpression _ "trace")
                 [LiteralExpression _ (TextLiteral "x or y was set")]))
           ]) -> True
         _ -> False
 
-      parseTest "on change (x) output(\"x was changed\");"
+      parseTest "on change (x) trace(\"x was changed\");"
         $ \ program -> case program of
         Right (Program
           [ OnChangeStatement _ ["x"]
             (ExpressionStatement _
               (CallExpression _
-                (IdentifierExpression _ "output")
+                (IdentifierExpression _ "trace")
                 [LiteralExpression _ (TextLiteral "x was changed")]))
           ]) -> True
         _ -> False
 
-      parseTest "on change (x,) output(\"x was changed\");"
+      parseTest "on change (x,) trace(\"x was changed\");"
         $ \ program -> case program of
         Right (Program
           [ OnChangeStatement _ ["x"]
             (ExpressionStatement _
               (CallExpression _
-                (IdentifierExpression _ "output")
+                (IdentifierExpression _ "trace")
                 [LiteralExpression _ (TextLiteral "x was changed")]))
           ]) -> True
         _ -> False
 
-      parseTest "on change (x, y) output(\"x or y was changed\");"
+      parseTest "on change (x, y) trace(\"x or y was changed\");"
         $ \ program -> case program of
         Right (Program
           [ OnChangeStatement _ ["x", "y"]
             (ExpressionStatement _
               (CallExpression _
-                (IdentifierExpression _ "output")
+                (IdentifierExpression _ "trace")
                 [LiteralExpression _ (TextLiteral "x or y was changed")]))
           ]) -> True
         _ -> False
@@ -1360,37 +1360,37 @@ spec = do
 
     specify "basic output" $ do
 
-      evalTest "output (\"hello\");" (== "hello\n")
+      evalTest "trace (\"hello\");" (== "\"hello\"\n")
 
-      evalTest "output (2 + 2);" (== "4\n")
+      evalTest "trace (2 + 2);" (== "4\n")
 
     specify "literals" $ do
 
-      evalTest "output (true);" (== "true\n")
+      evalTest "trace (true);" (== "true\n")
 
-      evalTest "output (false);" (== "false\n")
+      evalTest "trace (false);" (== "false\n")
 
-      evalTest "output (3.14);" (== "3.14\n")
+      evalTest "trace (3.14);" (== "3.14\n")
 
-      evalTest "output (42);" (== "42\n")
+      evalTest "trace (42);" (== "42\n")
 
-      evalTest "output (\"test\");" (== "test\n")
+      evalTest "trace (\"test\");" (== "\"test\"\n")
 
-      evalTest "output (null);" (== "null\n")
+      evalTest "trace (null);" (== "null\n")
 
-      evalTest "output ([1, 2, 3]);" (== "[1, 2, 3]\n")
+      evalTest "trace ([1, 2, 3]);" (== "[1, 2, 3]\n")
 
-      evalTest "output ({});" (== "{  }\n")
+      evalTest "trace ({});" (== "{  }\n")
 
-      evalTest "output ({ thing1: \"text\", thing2: 20 });" (== "{ thing1: text, thing2: 20 }\n")
+      evalTest "trace ({ thing1: \"text\", thing2: 20 });" (== "{ \"thing1\": \"text\", \"thing2\": 20 }\n")
 
-      evalTest "output ({ \"red\", \"green\", \"blue\" });" (== "{ blue, green, red }\n")
+      evalTest "trace ({ \"red\", \"green\", \"blue\" });" (== "{ \"blue\", \"green\", \"red\" }\n")
 
     specify "'whenever' statement" $ do
 
       evalTest "\
        \var x = 1;\n\
-       \whenever (x = 2) { output (\"beep\"); }\n\
+       \whenever (x = 2) { output (\"beep\\n\"); }\n\
        \x <- 3;\n\
        \x <- 2;\n\
        \x <- 3;\n\

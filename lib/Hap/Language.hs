@@ -22,7 +22,7 @@ module Hap.Language
 import Control.Applicative
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Either (partitionEithers)
-import Data.Foldable (asum)
+import Data.Foldable (asum, for_, traverse_)
 import Data.Functor.Identity (Identity)
 import Data.IntMap (IntMap)
 import Data.List (foldl', intercalate)
@@ -474,6 +474,7 @@ parseProgram path source = Parsec.parse programParser path source
         escape = (<?> "escape") $ Parsec.char '\\' *> asum
           [ '"' <$ Parsec.char '"'
           , '\\' <$ Parsec.char '\\'
+          , '\n' <$ Parsec.char 'n'
           , do
             unknown <- Parsec.anyChar
             Parsec.unexpected $ "unknown escape '" ++ [unknown] ++ "'"
@@ -751,7 +752,7 @@ instance Show Value where
     BooleanValue value -> if value then "true" else "false"
     FloatValue value -> show value
     IntegerValue value -> show value
-    TextValue value -> Text.unpack value
+    TextValue value -> show $ Text.unpack value
     NullValue -> "null"
     ListValue elements -> concat
       [ "["
@@ -806,7 +807,12 @@ type NativeFunction m = Env m -> [Value] -> m Value
 native :: (Monad m) => [(Identifier, NativeFunction m)]
 native =
   [ (,) "output" $ \ env args -> do
-    mapM_ (envOutputStr env . (++ "\n") . show) args
+    for_ args $ envOutputStr env . \ case
+      TextValue text -> Text.unpack text
+      arg -> show arg
+    pure NullValue
+  , (,) "trace" $ \ env args -> do
+    traverse_ (envOutputStr env . (++ "\n") . show) args
     pure NullValue
   ]
 
