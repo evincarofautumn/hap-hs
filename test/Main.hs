@@ -1437,11 +1437,14 @@ parseTest source successful = do
   assertBool (concat [show source, " => ", show result]) $ successful result
 
 evalTest :: String -> (String -> Bool) -> IO ()
-evalTest source successful = do
+evalTest = evalTestFlags []
+
+evalTestFlags :: [Flag] -> String -> (String -> Bool) -> IO ()
+evalTestFlags flags source successful = do
   context <- newEmptyContext
   output <- newIORef []
   let logOutput = modifyIORef' output . (:)
-  env <- newEmptyEnv logOutput []
+  env <- newEmptyEnv logOutput flags
   case parseProgram "test" source of
     Left parseError -> assertFailure (show parseError)
     Right program -> case compile context program of
