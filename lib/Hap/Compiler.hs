@@ -14,6 +14,7 @@ import Data.Fixed (mod')
 import Data.IORef
 import Data.List ((\\), foldl', intersect, union)
 import Data.Map (Map)
+import Data.Traversable (for)
 import Hap.Language
 import Hap.Runtime
 import qualified Data.Map as Map
@@ -76,7 +77,18 @@ compileStatement context statement = case statement of
   IfStatement !SourcePos !Expression !Statement !(Maybe Statement)
   LastStatement !SourcePos !(Maybe Identifier)
   NextStatement !SourcePos !(Maybe Identifier)
-  OnChangeStatement !SourcePos [Identifier] !Statement
+-}
+  OnChangeStatement pos vars body -> do
+    compiledVars <- for vars $ \ var -> do
+      compileExpression context $ IdentifierExpression pos var
+    compiledBody <- compileStatement context body
+    pure $ do
+      cells <- for (zip vars compiledVars) $ \ (name, expr) -> do
+        new (Just $ Text.unpack $ identifierText name) expr
+      void $ onChange cells compiledBody
+      pure ()
+
+{-
   OnSetStatement !SourcePos [Identifier] !Statement
   -- OnAddStatement !Identifier !Identifier !Statement
   -- OnRemoveStatement !Identifier !Identifier !Statement
