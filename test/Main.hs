@@ -1364,6 +1364,28 @@ spec = do
 
       evalTest "output (2 + 2);" (== "4\n")
 
+    specify "literals" $ do
+
+      evalTest "output (true);" (== "true\n")
+
+      evalTest "output (false);" (== "false\n")
+
+      evalTest "output (3.14);" (== "3.14\n")
+
+      evalTest "output (42);" (== "42\n")
+
+      evalTest "output (\"test\");" (== "test\n")
+
+      evalTest "output (null);" (== "null\n")
+
+      evalTest "output ([1, 2, 3]);" (== "[1, 2, 3]\n")
+
+      evalTest "output ({});" (== "{  }\n")
+
+      evalTest "output ({ thing1: \"text\", thing2: 20 });" (== "{ thing1: text, thing2: 20 }\n")
+
+      evalTest "output ({ \"red\", \"green\", \"blue\" });" (== "{ blue, green, red }\n")
+
     specify "'whenever' statement" $ do
 
       evalTest "\
