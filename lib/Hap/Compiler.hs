@@ -78,18 +78,9 @@ compileStatement context statement = case statement of
   LastStatement !SourcePos !(Maybe Identifier)
   NextStatement !SourcePos !(Maybe Identifier)
 -}
-  OnChangeStatement pos vars body -> do
-    compiledVars <- for vars $ \ var -> do
-      compileExpression context $ IdentifierExpression pos var
-    compiledBody <- compileStatement context body
-    pure $ do
-      cells <- for (zip vars compiledVars) $ \ (name, expr) -> do
-        new (Just $ Text.unpack $ identifierText name) expr
-      void $ onChange cells compiledBody
-      pure ()
-
+  OnChangeStatement pos vars body -> compileOnStatement context onChange pos vars body
+  OnSetStatement pos vars body -> compileOnStatement context onSet pos vars body
 {-
-  OnSetStatement !SourcePos [Identifier] !Statement
   -- OnAddStatement !Identifier !Identifier !Statement
   -- OnRemoveStatement !Identifier !Identifier !Statement
   RedoStatement !SourcePos !(Maybe Identifier)
@@ -145,6 +136,26 @@ compileStatement context statement = case statement of
   WhileStatement !SourcePos !Expression !Statement
 -}
   _ -> Left $ "TODO: compile statement: " ++ show statement
+
+compileOnStatement
+  :: (MonadIO m)
+  => Context m
+  -> ([Cell m Value] -> HapT m () -> HapT m a)
+  -> SourcePos
+  -> [Identifier]
+  -> Statement
+  -> Either CompileError (HapT m ())
+compileOnStatement context statement pos vars body = do
+  let readSymbols = contextReadSymbols context
+  compiledBody <- compileStatement context body
+  pure $ do
+    symbols <- readSymbols
+    cells <- for vars $ \ var -> case Map.lookup var symbols of
+      Just cell -> pure cell
+      -- TODO: Raise 'Unbound' Hap error.
+      Nothing -> error $ concat ["unbound name '", show var, "'"]
+    void $ statement cells compiledBody
+    pure ()
 
 compileExpression :: (MonadIO m) => Context m -> Expression -> Either CompileError (HapT m Value)
 compileExpression context expression = case expression of

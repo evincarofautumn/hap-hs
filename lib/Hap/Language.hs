@@ -10,6 +10,7 @@ module Hap.Language
   , NativeId
   , Program(..)
   , Signature(..)
+  , SourcePos
   , Statement(..)
   , UnaryOperator(..)
   , Value(..)

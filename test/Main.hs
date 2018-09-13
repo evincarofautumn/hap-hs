@@ -1386,6 +1386,21 @@ spec = do
 
       evalTest "trace ({ \"red\", \"green\", \"blue\" });" (== "{ \"blue\", \"green\", \"red\" }\n")
 
+    specify "'on set' statement" $ do
+
+      evalTest "\
+        \var x = 0;\n\
+        \on set (x) output (\"x was set to \", x, \"\\n\");\n\
+        \x <- 0;\n\
+        \x <- 1;\n\
+        \x <- 0;\n\
+        \\&"
+        (== "\
+          \x was set to 0\n\
+          \x was set to 1\n\
+          \x was set to 0\n\
+          \\&")
+
     specify "'on change' statement" $ do
 
       evalTest "\
