@@ -1,5 +1,6 @@
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
@@ -164,13 +165,14 @@ start options = case optOutputMode options of
           events <- SDL.pollEvents
           let gotQuitEvent = not $ null $ filter isQuitEvent events
           replQuit <- not <$> isEmptyMVar quit
-          let shouldQuit = gotQuitEvent || replQuit
-          SDL.rendererDrawColor renderer $= SDL.V4 0 128 255 255
-          SDL.clear renderer
-          SDL.present renderer
-          if shouldQuit
-            then exit 0
-            else loop
+          if
+            | gotQuitEvent -> putMVar quit 0
+            | replQuit -> pure ()
+            | otherwise -> do
+              SDL.rendererDrawColor renderer $= SDL.V4 0 128 255 255
+              SDL.clear renderer
+              SDL.present renderer
+              loop
           where
             isQuitEvent event = case SDL.eventPayload event of
               SDL.KeyboardEvent keyboardEvent
