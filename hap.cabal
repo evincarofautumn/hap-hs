@@ -24,6 +24,8 @@ library
   build-depends:       base >= 4.7 && < 5
                      , containers
                      , parsec
+                     , sdl2
+                     , stm
                      , text
                      , transformers
 
@@ -39,6 +41,7 @@ executable hap
                      , optparse-applicative
                      , parsec
                      , sdl2
+                     , stm
                      , text
 
 test-suite hap-test

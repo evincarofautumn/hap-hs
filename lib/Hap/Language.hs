@@ -21,6 +21,8 @@ module Hap.Language
   ) where
 
 import Control.Applicative
+import Control.Concurrent.STM
+import Control.Monad.IO.Class
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Either (partitionEithers)
 import Data.Foldable (asum, for_, traverse_)
@@ -34,6 +36,7 @@ import Data.Text (Text)
 import GHC.Exts (IsString(..))
 import Hap.Operators
 import Hap.Runtime (Env(..))
+import SDL (($=))
 import Text.Parsec (ParseError, (<?>))
 import Text.Parsec.Expr (buildExpressionParser)
 import Text.Parsec.Pos (SourcePos)
@@ -42,6 +45,7 @@ import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified SDL
 import qualified Text.Parsec as Parsec
 import qualified Text.Parsec.Expr as Expr
 
@@ -811,7 +815,7 @@ newtype NativeId = NativeId Int
 
 type NativeFunction m = Env m -> [Value] -> m Value
 
-native :: (Monad m) => [(Identifier, NativeFunction m)]
+native :: (MonadIO m) => [(Identifier, NativeFunction m)]
 native =
   [ (,) "output" $ \ env args -> do
     for_ args $ envOutputStr env . \ case
@@ -821,17 +825,46 @@ native =
   , (,) "trace" $ \ env args -> do
     traverse_ (envOutputStr env . (++ "\n") . show) args
     pure NullValue
+  , (,) "graphics_background_set" $ \ env args -> case args of
+    [IntegerValue r, IntegerValue g, IntegerValue b] -> case envGraphicsChan env of
+      Just graphicsChan -> do
+        liftIO $ atomically $ writeTChan graphicsChan $ \ renderer
+          -> SDL.rendererDrawColor renderer
+          $= SDL.V4 (fromIntegral r) (fromIntegral g) (fromIntegral b) 255
+        pure NullValue
+      -- TODO: Throw Hap graphics error.
+      Nothing -> pure NullValue
+    -- TODO: Throw Hap argument error.
+    _ -> pure NullValue
+  , (,) "graphics_clear" $ \ env args -> case args of
+    [] -> case envGraphicsChan env of
+      Just graphicsChan -> do
+        liftIO $ atomically $ writeTChan graphicsChan SDL.clear
+        pure NullValue
+      -- TODO: Throw Hap graphics error.
+      Nothing -> pure NullValue
+    -- TODO: Throw Hap argument error.
+    _ -> pure NullValue
+  , (,) "graphics_present" $ \ env args -> case args of
+    [] -> case envGraphicsChan env of
+      Just graphicsChan -> do
+        liftIO $ atomically $ writeTChan graphicsChan SDL.present
+        pure NullValue
+      -- TODO: Throw Hap graphics error.
+      Nothing -> pure NullValue
+    -- TODO: Throw Hap argument error.
+    _ -> pure NullValue
   ]
 
 nativeIds :: Map Identifier NativeId
 nativeIds = Map.fromList
-  $ map fst (native @Identity) `zip` map NativeId [0..]
+  $ map fst (native @IO) `zip` map NativeId [0..]
 
 nativeNames :: IntMap Identifier
 nativeNames = IntMap.fromList
-  $ [0..] `zip` map fst (native @Identity)
+  $ [0..] `zip` map fst (native @IO)
 
-nativeFunctions :: (Monad m) => IntMap (NativeFunction m)
+nativeFunctions :: (MonadIO m) => IntMap (NativeFunction m)
 nativeFunctions = IntMap.fromList
   $ [0..] `zip` map snd native
 
@@ -842,6 +875,6 @@ nativeName :: NativeId -> Identifier
 nativeName (NativeId n) = fromMaybe (error "undefined native ID")
   $ IntMap.lookup n nativeNames
 
-nativeFunction :: (Monad m) => NativeId -> NativeFunction m
+nativeFunction :: (MonadIO m) => NativeId -> NativeFunction m
 nativeFunction (NativeId n) = fromMaybe (error "undefined native ID")
   $ IntMap.lookup n nativeFunctions

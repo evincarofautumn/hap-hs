@@ -10,6 +10,7 @@ module Main (main) where
 import Control.Applicative ((<**>), many, optional)
 import Control.Arrow (returnA)
 import Control.Concurrent
+import Control.Concurrent.STM
 import Control.Monad.IO.Class (liftIO)
 import Data.Either (partitionEithers)
 import Data.Foldable (traverse_)
@@ -17,10 +18,9 @@ import Data.List (stripPrefix)
 import Data.Maybe (fromMaybe)
 import Hap.Compiler (Context, compile, newEmptyContext)
 import Hap.Language (parseProgram)
-import Hap.Runtime (Env, Flag(..), newEmptyEnv, run)
+import Hap.Runtime (Env(..), Flag(..), newEmptyEnv, run)
 import Options.Applicative.Arrows (asA, runA)
-import SDL (($=))
-import System.Console.Haskeline (getInputLine, outputStrLn, runInputT)
+import System.Console.Haskeline (InputT, getInputLine, outputStrLn, runInputT)
 import System.Exit (ExitCode(..), exitWith)
 import System.IO (hPrint, hPutStrLn, stderr)
 import qualified Options.Applicative as Options
@@ -111,6 +111,7 @@ start options = case optOutputMode options of
   TextOutput -> case optInputMode options of
 
     InteractiveInput -> do
+      (context, env, runRepl) <- newRepl []
       exit =<< runRepl
 
     BatchInput -> case optInputPaths options of
@@ -120,9 +121,8 @@ start options = case optOutputMode options of
         exit 1
 
       paths -> do
-        context <- newEmptyContext
-        env <- newEmptyEnv putStr []
-        exit =<< runBatch context env paths
+        (context, env, runBatch) <- newBatch paths []
+        exit =<< runBatch
 
   GraphicsOutput -> do
 
@@ -133,33 +133,37 @@ start options = case optOutputMode options of
 
     -- In graphics mode, we run the graphics loop on the main thread and start
     -- the REPL or program in a separate thread.
-    --
-    -- TODO: Add communication channels between runtime and graphics loop.
-    _ <- forkIO $ case optInputMode options of
+    (mGraphicsChan, hapThread) <- case optInputMode options of
 
       InteractiveInput -> do
-        putMVar quit =<< runRepl
+        (context, env, runRepl) <- newRepl [GraphicsEnabledFlag]
+        pure (envGraphicsChan env, putMVar quit =<< runRepl)
 
       BatchInput -> case optInputPaths options of
 
         [] -> do
           batchMissingPaths
-          putMVar quit 1
+          pure (Nothing, putMVar quit 1)
 
         paths -> do
-          context <- newEmptyContext
-          -- TODO: Add graphics communication channels to environment.
-          env <- newEmptyEnv putStr []
-          putMVar quit =<< runBatch context env paths
+          (context, env, runBatch) <- newBatch paths [GraphicsEnabledFlag]
+          pure (envGraphicsChan env, putMVar quit =<< runBatch)
 
-    startGraphicsLoop renderer quit
-    status <- takeMVar quit
-    exit status
+    case mGraphicsChan of
+      Nothing -> error "could not create graphics channel"  -- pure ()
+      Just graphicsChan -> do
+        _hapThreadID <- forkIO hapThread
+        startGraphicsLoop renderer graphicsChan quit
+    exit =<< takeMVar quit
 
   where
 
-    startGraphicsLoop :: SDL.Renderer -> MVar Int -> IO ()
-    startGraphicsLoop renderer quit = loop
+    startGraphicsLoop
+      :: SDL.Renderer
+      -> TChan (SDL.Renderer -> IO ())
+      -> MVar Int
+      -> IO ()
+    startGraphicsLoop renderer graphicsChan quit = loop
       where
         loop = do
           events <- SDL.pollEvents
@@ -169,9 +173,14 @@ start options = case optOutputMode options of
             | gotQuitEvent -> putMVar quit 0
             | replQuit -> pure ()
             | otherwise -> do
-              SDL.rendererDrawColor renderer $= SDL.V4 0 128 255 255
-              SDL.clear renderer
-              SDL.present renderer
+              let
+                flushGraphicsChannel
+                  = atomically (tryReadTChan graphicsChan) >>= \ case
+                    Nothing -> pure ()
+                    Just command -> do
+                      command renderer
+                      flushGraphicsChannel
+              flushGraphicsChannel
               loop
           where
             isQuitEvent event = case SDL.eventPayload event of
@@ -187,33 +196,39 @@ start options = case optOutputMode options of
     batchMissingPaths = do
       hPutStrLn stderr "Running in batch mode with no input source files; exiting."
 
-    runBatch :: Context IO -> Env IO -> [FilePath] -> IO Int
-    runBatch context env paths = do
-      sources <- traverse readFile paths
-      let parseResults = zipWith parseProgram paths sources
-      case partitionEithers parseResults of
+    newBatch :: [FilePath] -> [Flag] -> IO (Context IO, Env IO, IO Int)
+    newBatch paths flags = do
+      context <- newEmptyContext
+      env <- newEmptyEnv putStr flags
+      let
+        runBatch = do
+          sources <- traverse readFile paths
+          let parseResults = zipWith parseProgram paths sources
+          case partitionEithers parseResults of
 
-        -- All parses were successful.
-        ([], programs) -> do
-          let program = mconcat programs
-          case compile context program of
-            Left compileError -> do
-              hPutStrLn stderr compileError
+            -- All parses were successful.
+            ([], programs) -> do
+              let program = mconcat programs
+              case compile context program of
+                Left compileError -> do
+                  hPutStrLn stderr compileError
+                  pure 1
+                Right compiled -> do
+                  -- TODO: Return exit status.
+                  run env compiled
+                  pure 0
+
+            -- At least one source file failed to parse.
+            (parseErrors, _) -> do
+              traverse_ (hPrint stderr) parseErrors
               pure 1
-            Right compiled -> do
-              -- TODO: Return exit status.
-              run env compiled
-              pure 0
 
-        -- At least one source file failed to parse.
-        (parseErrors, _) -> do
-          traverse_ (hPrint stderr) parseErrors
-          pure 1
+      pure (context, env, runBatch)
 
-runRepl :: IO Int
-runRepl = runInputT Haskeline.defaultSettings $ do
+newRepl :: [Flag] -> IO (Context (InputT IO), Env (InputT IO), IO Int)
+newRepl flags = do
   context <- liftIO (newEmptyContext @(Haskeline.InputT IO))
-  env <- liftIO $ newEmptyEnv Haskeline.outputStr []
+  env <- liftIO $ newEmptyEnv Haskeline.outputStr flags
   let
     prompt = "> "  -- ""
 
@@ -244,7 +259,7 @@ runRepl = runInputT Haskeline.defaultSettings $ do
                   Right compiled -> do
                     run env compiled
                 loop
-  loop
+  pure (context, env, runInputT Haskeline.defaultSettings loop)
 
 exit :: Int -> IO a
 exit status = case status of

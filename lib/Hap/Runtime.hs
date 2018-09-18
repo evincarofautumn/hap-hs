@@ -30,6 +30,7 @@ module Hap.Runtime
   ) where
 
 import Control.Concurrent.MVar
+import Control.Concurrent.STM
 import Control.Exception (Exception, throwIO)
 import Control.Monad
 import Control.Monad.Fix (MonadFix(..))
@@ -46,6 +47,7 @@ import Prelude hiding (id)
 import System.IO.Unsafe (unsafeInterleaveIO)
 import System.Mem.Weak
 import qualified Data.IntSet as IntSet
+import qualified SDL
 
 --------------------------------------------------------------------------------
 -- Types
@@ -60,6 +62,7 @@ data Env m = Env
   , envQueue :: !(IORef [HapT m ()])
   , envOutputStr :: String -> m ()
   , envFlags :: !FlagSet
+  , envGraphicsChan :: Maybe (TChan (SDL.Renderer -> IO ()))
   }
 
 data FlagSet = FlagSet !Word64
@@ -71,7 +74,8 @@ instance Monoid FlagSet where
   mempty = FlagSet 0
 
 data Flag
-  = LoggingEnabledFlag
+  = GraphicsEnabledFlag
+  | LoggingEnabledFlag
   deriving (Enum)
 
 setFlag :: Flag -> FlagSet -> FlagSet
@@ -147,15 +151,20 @@ newtype HapT m a = HapT { unHapT :: Env m -> m (a, [SomeCell m]) }
 -- Create a new empty environment.
 newEmptyEnv :: (String -> m ()) -> [Flag] -> IO (Env m)
 newEmptyEnv outputStr flags = do
+  let flagSet = foldr setFlag mempty flags
   listeners <- newIORef []
   next <- newIORef (0 :: Id)
   queue <- newIORef []
+  graphicsChan <- if getFlag GraphicsEnabledFlag flagSet
+    then Just <$> atomically newTChan
+    else pure Nothing
   pure Env
     { envListeners = listeners
     , envNext = next
     , envQueue = queue
     , envOutputStr = outputStr
-    , envFlags = foldr setFlag mempty flags
+    , envFlags = flagSet
+    , envGraphicsChan = graphicsChan
     }
 
 -- Run a computation in the given environment.
