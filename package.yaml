@@ -19,6 +19,7 @@ ghc-options:
 - -Wall
 
 default-extensions:
+- BlockArguments
 - DisambiguateRecordFields
 
 library:

@@ -38,7 +38,7 @@ data Options = Options
   }
 
 optionsParser :: Options.Parser Options
-optionsParser = runA $ proc () -> do
+optionsParser = runA proc () -> do
 
   optInputMode <- opt
     (fmap (fromMaybe InteractiveInput)
@@ -77,7 +77,7 @@ optionsParser = runA $ proc () -> do
   where
     opt f = asA . f . mconcat
 
-    parseInputMode = Options.eitherReader $ \ case
+    parseInputMode = Options.eitherReader \ case
       "interactive" -> Right InteractiveInput
       "batch" -> Right BatchInput
       unknownMode -> Left $ concat
@@ -87,7 +87,7 @@ optionsParser = runA $ proc () -> do
           \Default mode is 'interactive'."
         ]
 
-    parseOutputMode = Options.eitherReader $ \ case
+    parseOutputMode = Options.eitherReader \ case
       "text" -> Right TextOutput
       "graphics" -> Right GraphicsOutput
       unknownMode -> Left $ concat

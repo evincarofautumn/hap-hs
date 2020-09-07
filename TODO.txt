@@ -1,4 +1,3 @@
-Use BlockArguments
 Haddockify docs
 Add Haddocks to modules
 Update links in Haddock docs

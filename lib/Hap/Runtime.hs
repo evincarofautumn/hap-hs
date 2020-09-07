@@ -79,7 +79,7 @@ run env (HapT action) = fst <$> action env
 
 -- Unsafely access the environment from within a Hap computation.
 unsafeGetEnv :: (Applicative m) => HapT m (Env m)
-unsafeGetEnv = HapT $ \ env -> pure (env, [])
+unsafeGetEnv = HapT \ env -> pure (env, [])
 
 --------------------------------------------------------------------------------
 -- Cell Operations
@@ -87,7 +87,7 @@ unsafeGetEnv = HapT $ \ env -> pure (env, [])
 
 -- Allocate a fresh cell ID.
 newId :: (MonadIO m) => HapT m Id
-newId = HapT $ \ env -> liftIO $ do
+newId = HapT \ env -> liftIO do
   next <- readIORef $ envNext env
   writeIORef (envNext env) (next + 1)
   pure (next, [])
@@ -96,7 +96,7 @@ newId = HapT $ \ env -> liftIO $ do
 new :: (MonadIO m) => Maybe String -> HapT m a -> HapT m (Cell m a)
 new label action = do
   id <- newId
-  HapT $ \ env -> do
+  HapT \ env -> do
     expression <- liftIO $ newIORef action
     cache <- liftIO $ newIORef Empty
     sources <- liftIO $ newIORef []
@@ -122,7 +122,7 @@ debugName cell = (('#' : show (cellId cell)) ++)
 
 -- Get the value of a cell.
 get :: (Show a, MonadIO m) => Cell m a -> HapT m a
-get cell = HapT $ \ !env -> do
+get cell = HapT \ !env -> do
   cache <- liftIO $ readIORef $ cellCache cell
   name <- debugName cell
   logMessage env $ concat ["get(", name, ") {"]
@@ -146,7 +146,7 @@ get cell = HapT $ \ !env -> do
         [name, ".cache = Full ", show v]
       liftIO $ writeIORef (cellSources cell) ds
       wc <- makeWeakCell cell
-      liftIO $ forM_ ds $ \ (SomeCell d) -> modifyIORef' (cellSinks d) (wc :)
+      liftIO $ forM_ ds \ (SomeCell d) -> modifyIORef' (cellSinks d) (wc :)
       pure (v, [SomeCell cell])
     Blackhole -> liftIO $ throwIO $ Cycle $ SomeCell cell
   logMessage env "}"
@@ -154,7 +154,7 @@ get cell = HapT $ \ !env -> do
 
 -- Set the value of a cell to a new expression.
 set :: (Show a, MonadIO m) => Cell m a -> HapT m a -> HapT m ()
-set cell action = HapT $ \ env -> do
+set cell action = HapT \ env -> do
   name <- debugName cell
   logMessage env $ concat
     ["set(", name, ") {"]
@@ -173,9 +173,9 @@ makeWeakCell cell = WeakCell <$> liftIO (mkWeakPtr cell Nothing)
 
 -- Convert a weak cell into a cell reference if it hasn't expired.
 strengthen :: (MonadIO m) => WeakCell m -> m (Maybe (SomeCell m))
-strengthen (WeakCell wc) = liftIO $ do
+strengthen (WeakCell wc) = liftIO do
   mc <- deRefWeak wc
-  pure $ case mc of
+  pure case mc of
     Just cell -> Just $ SomeCell cell
     Nothing -> Nothing
 
@@ -187,7 +187,7 @@ strengthen (WeakCell wc) = liftIO $ do
 on :: (MonadIO m) => IntSet -> Handler m -> HapT m Id
 on cells handler = do
   n <- newId
-  HapT $ \ env -> liftIO $ do
+  HapT \ env -> liftIO do
     modifyIORef' (envListeners env) ((n, cells, handler) :)
     pure (n, [])
 
@@ -196,9 +196,9 @@ on cells handler = do
 -- TODO: Return the old listener so it can be restarted. (That could also be
 -- implemented with a per-listener flag for pausing & resuming.)
 stop :: (MonadIO m) => Id -> HapT m ()
-stop listener = HapT $ \ env -> liftIO $ do
+stop listener = HapT \ env -> liftIO do
   modifyIORef' (envListeners env) $ filter
-    $ \ (listener', _, _) -> listener' /= listener
+    \ (listener', _, _) -> listener' /= listener
   pure ((), [])
 
 -- Add an action to be run when any of the given cells is set.
@@ -213,7 +213,7 @@ onChange :: (Eq a, Show a, MonadIO m) => [Cell m a] -> HapT m () -> HapT m Id
 onChange cells action = do
   values <- mapM get cells
   state <- new (Just "'onChange' set") $ pure values
-  onSet cells $ do
+  onSet cells do
     values' <- mapM get cells
     state' <- get state
     set state $ pure values'
@@ -223,7 +223,7 @@ onChange cells action = do
 removeObserver :: (MonadIO m) => SomeCell m -> SomeCell m -> m ()
 removeObserver o (SomeCell cell) = do
   observers <- liftIO $ readIORef (cellSinks cell)
-  observers' <- flip filterM observers $ \ o' -> do
+  observers' <- flip filterM observers \ o' -> do
     mi <- weakCellId o'
     case mi of
       Just i -> pure (someCellId o /= i)
@@ -236,7 +236,7 @@ invalidate :: (MonadIO m) => Env m -> SomeCell m -> m ()
 invalidate env sc@(SomeCell cell) = do
   os <- liftIO $ readIORef $ cellSinks cell
   rs <- liftIO $ readIORef $ cellSources cell
-  liftIO $ do
+  liftIO do
     writeIORef (cellSinks cell) []
     writeIORef (cellCache cell) Empty
     writeIORef (cellSources cell) []
@@ -254,14 +254,14 @@ notifySet env someCell = do
   let notifiedId = someCellId someCell
   listeners <- liftIO $ readIORef $ envListeners env
   -- Listeners are evaluated in the order they were added.
-  forM_ (reverse listeners) $ \ (_listenerId, cells, handler) -> do
-    when (notifiedId `IntSet.member` cells) $ case handler of
+  forM_ (reverse listeners) \ (_listenerId, cells, handler) -> do
+    when (notifiedId `IntSet.member` cells) case handler of
       Set action -> enqueue env action
       _ -> pure ()
 
 -- Enqueue an action to be executed at the next sequence point.
 enqueue :: (MonadIO m) => Env m -> HapT m () -> m ()
-enqueue env action = liftIO $ do
+enqueue env action = liftIO do
   modifyIORef' (envQueue env) (action :)
 
 -- Flush the queue of actions to be executed. Since these actions may enqueue

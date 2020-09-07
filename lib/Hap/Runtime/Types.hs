@@ -121,14 +121,14 @@ instance Monoid FlagSet where
 
 -- Map over the result of an expression.
 instance (Monad m) => Functor (HapT m) where
-  fmap f (HapT action) = HapT $ \ env -> do
+  fmap f (HapT action) = HapT \ env -> do
     (result, sources) <- action env
     pure (f result, sources)
 
 -- Embed values in an expression or join expressions by function application.
 instance (Monad m) => Applicative (HapT m) where
   pure x = HapT (\ _env -> pure (x, []))
-  HapT mf <*> HapT mx = HapT $ \ env -> do
+  HapT mf <*> HapT mx = HapT \ env -> do
     (f, sources) <- mf env
     (x, sources') <- mx env
     pure (f x, union sources sources')
@@ -136,14 +136,14 @@ instance (Monad m) => Applicative (HapT m) where
 -- Sequence expressions, introducing a sequence point to flush the queue.
 instance (MonadIO m) => Monad (HapT m) where
   return = pure
-  HapT cmd >>= f = HapT $ \ env -> do
+  HapT cmd >>= f = HapT \ env -> do
     (a, cs) <- cmd env
     -- sequencePointM env
     (b, ds) <- unHapT (f a) env
     pure (b, union cs ds)
 
 instance MonadTrans HapT where
-  lift action = HapT $ \ _env -> do
+  lift action = HapT \ _env -> do
     result <- action
     pure (result, [])
 
@@ -154,14 +154,14 @@ instance MonadTrans HapT where
 -- internally. It also allows weak cel references: an expression can read a cell
 -- but not record the dependency by wrapping the read in 'liftIO' + 'run'.
 instance (MonadIO m) => MonadIO (HapT m) where
-  liftIO action = HapT $ \ _env -> do
+  liftIO action = HapT \ _env -> do
     result <- liftIO action
     pure (result, [])
 
 -- This allows the body of a handler to refer to the handler itself, e.g., to
 -- implement automatic stopping.
 instance (MonadIO m) => MonadFix (HapT m) where
-  mfix action = HapT $ \ env -> do
+  mfix action = HapT \ env -> do
     signal <- liftIO newEmptyMVar
     argument <- liftIO $ unsafeInterleaveIO $ takeMVar signal
     (result, sources) <- unHapT (action argument) env

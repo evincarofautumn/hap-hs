@@ -429,7 +429,7 @@ parseProgram path source = Parsec.parse programParser path source
               :: Parser a
               -> UnaryOperator
               -> Expr.Operator String () Identity Expression
-            prefix parser unaryOperator = Expr.Prefix $ do
+            prefix parser unaryOperator = Expr.Prefix do
               pos <- getSourcePos <* parser
               pure $ UnaryExpression pos unaryOperator
 
@@ -439,12 +439,12 @@ parseProgram path source = Parsec.parse programParser path source
               -> BinaryOperator
               -> Expr.Operator String () Identity Expression
             binary parser associativity binaryOperator
-              = flip Expr.Infix associativity $ do
+              = flip Expr.Infix associativity do
               pos <- getSourcePos <* parser
               pure $ BinaryExpression pos binaryOperator
 
         termParser :: Parser Expression
-        termParser = (<?> "expression term") $ do
+        termParser = (<?> "expression term") do
           prefix <- asum
 
             [ LiteralExpression
@@ -495,17 +495,17 @@ parseProgram path source = Parsec.parse programParser path source
         expressionSuffixParser = do
           pos <- getSourcePos
           asum
-            [ (<?> "subscript suffix") $ do
+            [ (<?> "subscript suffix") do
               subscripts <- namedBracketed "start of subscript" "end of subscript"
                 $ Parsec.sepBy expressionParser (symbol ",")
-              pure $ \ prefix -> SubscriptExpression pos prefix subscripts
-            , (<?> "member lookup suffix") $ do
+              pure \ prefix -> SubscriptExpression pos prefix subscripts
+            , (<?> "member lookup suffix") do
               identifier <- symbol "." *> identifierParser
-              pure $ \ prefix -> DotExpression pos prefix identifier
-            , (<?> "call suffix") $ do
+              pure \ prefix -> DotExpression pos prefix identifier
+            , (<?> "call suffix") do
               arguments <- grouped
                 $ Parsec.sepEndBy expressionParser (symbol ",")
-              pure $ \ prefix -> CallExpression pos prefix arguments
+              pure \ prefix -> CallExpression pos prefix arguments
             ]
 
         literalParser :: Parser Literal
@@ -520,7 +520,7 @@ parseProgram path source = Parsec.parse programParser path source
             mFractionalPart <- Parsec.optionMaybe
               (Parsec.char '.' *> Parsec.many1 Parsec.digit)
               <* Parsec.spaces
-            pure $ case mFractionalPart of
+            pure case mFractionalPart of
               Just fractionalPart -> FloatLiteral
                 $ read $ integerPart ++ "." ++ fractionalPart
               Nothing -> IntegerLiteral
@@ -577,18 +577,18 @@ parseProgram path source = Parsec.parse programParser path source
             keyValuePair = do
               pos <- getSourcePos
               asum
-                [ (<?> "map key-value pair") $ Parsec.try $ do
+                [ (<?> "map key-value pair") $ Parsec.try do
                   key <- LiteralExpression pos . TextLiteral <$> asum
                     [ identifierText <$> identifierParser
                     , textLiteralParser
                     ]
                   value <- symbol ":" *> expressionParser
                   pure (key, Just value)
-                , (<?> "map key-value pair") $ do
+                , (<?> "map key-value pair") do
                   key <- grouped expressionParser
                   mValue <- Parsec.optionMaybe $ symbol ":" *> expressionParser
                   pure (key, mValue)
-                , (<?> "set element") $ do
+                , (<?> "set element") do
                   key <- expressionParser
                   pure (key, Nothing)
                 ]
@@ -623,7 +623,7 @@ parseProgram path source = Parsec.parse programParser path source
     isOperator = (`elem` ("!#$%&*+-./<=>?@\\^|~" :: String))
 
     signatureParser :: Parser Signature
-    signatureParser = (<?> "type signature") $ do
+    signatureParser = (<?> "type signature") do
       prefix <- asum
         [ do
           pos <- getSourcePos <* keyword "function"
@@ -643,7 +643,7 @@ parseProgram path source = Parsec.parse programParser path source
       pos <- getSourcePos
       arguments <- grouped
         $ Parsec.sepEndBy signatureParser (symbol ",")
-      pure $ \ prefix -> ApplicationSignature pos prefix arguments
+      pure \ prefix -> ApplicationSignature pos prefix arguments
 
     applySuffixes :: [a -> a] -> a -> a
     applySuffixes = foldl' (flip (.)) id
@@ -733,7 +733,7 @@ instance Eq Value where
   _ == _ = False
 
 instance Ord Value where
-  compare = curry $ \ case
+  compare = curry \ case
     (BooleanValue a, BooleanValue b) -> a `compare` b
     (FloatValue a, FloatValue b) -> a `compare` b
     (IntegerValue a, IntegerValue b) -> a `compare` b
@@ -817,18 +817,18 @@ type NativeFunction m = Env m -> [Value] -> m Value
 
 native :: (MonadIO m) => [(Identifier, NativeFunction m)]
 native =
-  [ (,) "output" $ \ env args -> do
+  [ (,) "output" \ env args -> do
     for_ args $ envOutputStr env . \ case
       TextValue text -> Text.unpack text
       arg -> show arg
     pure NullValue
-  , (,) "trace" $ \ env args -> do
+  , (,) "trace" \ env args -> do
     traverse_ (envOutputStr env . (++ "\n") . show) args
     pure NullValue
-  , (,) "graphics_background_set" $ \ env args -> case args of
+  , (,) "graphics_background_set" \ env args -> case args of
     [IntegerValue r, IntegerValue g, IntegerValue b] -> case envGraphicsChan env of
       Just graphicsChan -> do
-        liftIO $ atomically $ writeTChan graphicsChan $ \ renderer
+        liftIO $ atomically $ writeTChan graphicsChan \ renderer
           -> SDL.rendererDrawColor renderer
           $= SDL.V4 (fromIntegral r) (fromIntegral g) (fromIntegral b) 255
         pure NullValue
@@ -836,7 +836,7 @@ native =
       Nothing -> pure NullValue
     -- TODO: Throw Hap argument error.
     _ -> pure NullValue
-  , (,) "graphics_clear" $ \ env args -> case args of
+  , (,) "graphics_clear" \ env args -> case args of
     [] -> case envGraphicsChan env of
       Just graphicsChan -> do
         liftIO $ atomically $ writeTChan graphicsChan SDL.clear
@@ -845,7 +845,7 @@ native =
       Nothing -> pure NullValue
     -- TODO: Throw Hap argument error.
     _ -> pure NullValue
-  , (,) "graphics_present" $ \ env args -> case args of
+  , (,) "graphics_present" \ env args -> case args of
     [] -> case envGraphicsChan env of
       Just graphicsChan -> do
         liftIO $ atomically $ writeTChan graphicsChan SDL.present

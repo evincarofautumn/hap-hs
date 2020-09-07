@@ -50,7 +50,7 @@ compileStatement context statement = case statement of
   AfterStatement _pos condition body -> do
     compiledCondition <- compileExpression context condition
     compiledBody <- compileStatement context body
-    pure $ do
+    pure do
       -- FIXME: Should be an expression to return the ID?
       _id <- after compiledCondition compiledBody
       pure ()
@@ -59,14 +59,14 @@ compileStatement context statement = case statement of
 -}
   BlockStatement _pos statements -> do
     compiledStatements <- traverse (compileStatement context) statements
-    pure $ do
+    pure do
       sequence_ compiledStatements
       -- sequencePoint
   EmptyStatement _pos -> do
     pure $ pure ()
   ExpressionStatement _pos expression -> do
     compiledExpression <- compileExpression context expression
-    pure $ do
+    pure do
       void compiledExpression
       sequencePoint
 
@@ -90,9 +90,9 @@ compileStatement context statement = case statement of
   VarStatement _pos bindings -> do
     compiledBindings <- traverse compileBinding bindings
     let modifySymbols = contextModifySymbols context
-    pure $ do
+    pure do
       initializers <- traverse runInitializer compiledBindings
-      modifySymbols $ \ symbols0 -> foldl'
+      modifySymbols \ symbols0 -> foldl'
         (\ symbols (identifier, value) -> Map.insert identifier value symbols)
         symbols0
         initializers
@@ -128,7 +128,7 @@ compileStatement context statement = case statement of
   WheneverStatement _pos condition body -> do
     compiledCondition <- compileExpression context condition
     compiledBody <- compileStatement context body
-    pure $ do
+    pure do
       _ <- whenever compiledCondition compiledBody
       pure ()
 
@@ -148,9 +148,9 @@ compileOnStatement
 compileOnStatement context statement pos vars body = do
   let readSymbols = contextReadSymbols context
   compiledBody <- compileStatement context body
-  pure $ do
+  pure do
     symbols <- readSymbols
-    cells <- for vars $ \ var -> case Map.lookup var symbols of
+    cells <- for vars \ var -> case Map.lookup var symbols of
       Just cell -> pure cell
       -- TODO: Raise 'Unbound' Hap error.
       Nothing -> error $ concat ["unbound name '", show var, "'"]
@@ -167,12 +167,12 @@ compileExpression context expression = case expression of
     NullLiteral -> pure $ pure NullValue
     ListLiteral elements -> do
       compiledElements <- traverse (compileExpression context) elements
-      pure $ do
+      pure do
         elementValues <- sequence compiledElements
         pure $ ListValue elementValues
     MapLiteral pairs -> do
       compiledPairs <- traverse compilePair pairs
-      pure $ do
+      pure do
         pairValues <- traverse evalPair compiledPairs
         pure $ MapValue $ Map.fromList pairValues
       where
@@ -182,7 +182,7 @@ compileExpression context expression = case expression of
         evalPair (key, value) = (,) <$> key <*> value
     SetLiteral elements -> do
       compiledElements <- traverse (compileExpression context) elements
-      pure $ do
+      pure do
         elementValues <- sequence compiledElements
         pure $ SetValue $ Set.fromList elementValues
 {-
@@ -192,7 +192,7 @@ compileExpression context expression = case expression of
 -}
   IdentifierExpression _pos identifier -> do
     let readSymbols = contextReadSymbols context
-    pure $ do
+    pure do
       symbols <- readSymbols
       case Map.lookup identifier symbols of
         Just cell -> get cell
@@ -207,12 +207,12 @@ compileExpression context expression = case expression of
   CallExpression _pos function arguments -> do
     compiledFunction <- compileExpression context function
     compiledArguments <- traverse (compileExpression context) arguments
-    pure $ do
+    pure do
       functionValue <- compiledFunction
       argumentValues <- sequence compiledArguments
       call functionValue argumentValues
     where
-      call (NativeValue f) xs = HapT $ \ env -> do
+      call (NativeValue f) xs = HapT \ env -> do
         result <- nativeFunction f env xs
         pure (result, [])
       call _ _ = error "TODO: call non-native function"
@@ -224,9 +224,9 @@ compileExpression context expression = case expression of
     pure $ compiledBody
   UnaryExpression _pos operator operand -> do
     compiledOperand <- compileExpression context operand
-    pure $ do
+    pure do
       operandValue <- compiledOperand
-      pure $ case operator of
+      pure case operator of
         -- See note [Each and Every].
         UnaryEach -> error "TODO: implement unary 'each'"
         UnaryEvery -> error "TODO: implement unary 'every'"
@@ -244,7 +244,7 @@ compileExpression context expression = case expression of
   BinaryExpression _pos operator first second -> do
     compiledFirst <- compileExpression context first
     compiledSecond <- compileExpression context second
-    pure $ case operator of
+    pure case operator of
 
       -- TODO: function * function = compose with multiplication
       BinaryMultiply -> do
@@ -536,9 +536,9 @@ after condition action = do
     else do
       state <- new (Just "'after' state") $ pure False
       rec
-        handler <- whenever condition $ do
+        handler <- whenever condition do
           state' <- get state
-          when (not state') $ do
+          when (not state') do
             action
             stop handler
           set state $ pure True
@@ -553,7 +553,7 @@ whenever condition action = do
   initial <- get current
   previous <- new (Just "'whenever' previous state") $ pure initial
   when (booleanValue initial) action
-  onChange [current] $ do
+  onChange [current] do
     previous' <- get previous
     current' <- get current
     set previous $ pure current'
