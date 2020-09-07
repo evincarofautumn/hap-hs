@@ -126,13 +126,15 @@ Tokens :: { [Token SourceSpan] }
 
 -- Main entry point.
 Program :: { Program SourceSpan }
-  : many(Statement) { Program $1 }
+  : Statement { Program [$1] }
 
 Statement :: { Statement SourceSpan }
+
   -- : atomicKeyword Statement { atomicStatement $1 $2 }
   -- | IfStatement             { $1 }
   -- | '{' many(Statement) '}' { blockStatement $1 $2 $3 }
   -- | Expression ';'          { expressionStatement $1 $2 }
+
   : ';'                     { emptyStatement $1 }
 
 IfStatement :: { Statement SourceSpan }

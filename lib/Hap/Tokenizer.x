@@ -124,8 +124,8 @@ token :-
 
 {
 
-tokenizer :: Alex (Token SourceSpan)
-tokenizer = alexMonadScan
+-- tokenizer :: Alex (Token SourceSpan)
+-- tokenizer = alexMonadScan
 
 alexEOF :: Alex (Token SourceSpan)
 alexEOF = pure EofToken

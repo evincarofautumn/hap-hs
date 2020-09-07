@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+{-# LANGUAGE StandaloneDeriving #-}
+
 module Hap.Parse
   ( Parser
   , alexGetPosition
@@ -30,7 +32,12 @@ newtype Parser a = Parser { unParser :: String -> Alex (Either String a) }
 
 runParser :: Parser a -> String -> String -> Either String a
 runParser parser sourceName input
-  = join $ runAlex input $ unParser parser sourceName
+  = case runAlex input $ unParser parser sourceName of
+    Left alexError -> Left ("outer error: " ++ alexError)
+    Right alexResult -> case alexResult of
+      Left parserError -> Left ("inner error: " ++ parserError)
+      Right result -> Right result
+  -- = join $ runAlex input $ unParser parser sourceName
 
 thenP :: Parser a -> (a -> Parser b) -> Parser b
 thenP = (>>=)
@@ -75,7 +82,15 @@ alexGetPosition = Alex $ \ s@AlexState { alex_pos = pos } -> Right (s, pos)
 errorP :: Token SourceSpan -> Parser a
 errorP token = liftAlex do
   AlexPn _ row col <- alexGetPosition
-  alexShowError (row, col, Just (show (pretty token)))
+  state <- alexGetState
+  let
+    message = concat
+      [ "error at token "
+      , show (pretty token)
+      , " in state "
+      , show state
+      ]
+  alexShowError (row, col, Just message)
 
 {-
 happyError :: Parser a
@@ -84,6 +99,8 @@ happyError = Parser \ _sourceName -> do
   alexShowError (row, col, Nothing)
 -}
 
+deriving instance Show AlexState
+
 alexGetState :: Alex AlexState
 alexGetState = Alex $ \ s -> Right (s, s)
 
@@ -91,49 +108,58 @@ liftAlex :: Alex a -> Parser a
 liftAlex = Parser . const . fmap Right
 
 happyTokenizer :: (Token SourceSpan -> Parser a) -> Parser a
-happyTokenizer continue = do
-  input <- liftAlex alexGetInput
-  state <- liftAlex alexGetState
-  continue =<< lexToken input state
+happyTokenizer continue = continue =<< lexToken
   where
 
-    dummyUserState = undefined
+    dummyUserState = error "dummy user state"
     dummyStartCode = 0
 
-    lexToken :: AlexInput -> AlexState -> Parser (Token SourceSpan)
-    lexToken input@(_, _, _, oldBuf) state = loop
-      where
-        loop = case alexScanUser dummyUserState input 0 of
-          AlexEOF -> do
-            () <- flip trace (pure ()) $ concat
-              ["got eof"]
-            pure EofToken
-          AlexError errorState@(loc', _prevChar, _bytes, _buf) -> do
-            -- TODO: Proper error reporting.
-            () <- flip trace (pure ()) $ concat
-              ["failing in state", show errorState]
-            failP (show errorState)
-          AlexSkip input' skipWidth -> do
-            () <- flip trace (pure ()) $ concat
-              ["skipping ", show skipWidth, " chars"]
-            liftAlex $ alexSetInput input'
-            lexToken input' state
-          AlexToken input'@(end, _prevChar, _bytes, buf') tokenWidth returnToken
-            -> liftAlex do
-              -- Note that we pass the /current/ input state to the token
-              -- continuation, not the /next/ state.
-              t <- returnToken input tokenWidth
-              () <- flip trace (pure ()) $ concat
-                [ "consumed "
-                , show tokenWidth
-                , " chars ("
-                , take tokenWidth oldBuf
-                , ") and returning token "
-                , show t
-                , " from buffer "
-                , show oldBuf
-                , " to "
-                , show buf'
-                ]
-              alexSetInput input'
-              pure t
+    lexToken :: Parser (Token SourceSpan)
+    lexToken = do
+      input@(loc, _previousChar, _bytes, buffer) <- liftAlex alexGetInput
+      case alexScan input dummyStartCode of
+        AlexEOF -> do
+          () <- flip trace (pure ()) $ concat
+            ["got eof"]
+          -- TODO: Include source span (@SourceSpan (Just loc, Just loc')@).
+          pure EofToken
+        AlexError input'@(loc', _previousChar', _bytes', buffer') -> do
+          () <- flip trace (pure ()) $ concat
+            [ "failing; input: "
+            , show input
+            , "; error state:"
+            , show input'
+            ]
+          -- TODO: Proper error reporting.
+          failP (show input ++ " / " ++ show input')
+        AlexSkip input' skipWidth -> do
+          () <- flip trace (pure ()) $ concat
+            ["skipping ", show skipWidth, " chars"]
+          liftAlex $ alexSetInput input'
+          lexToken
+        AlexToken input'@(loc', _prevChar', _bytes', buffer') width yield -> do
+          liftAlex $ alexSetInput input'
+          -- Note that we pass the /current/ input state to the token
+          -- continuation, not the /next/ state.
+          -- TODO: Include source span (@SourceSpan (Just loc, Just loc')@).
+          t <- liftAlex $ yield input width
+          let
+            (firstPartOfBuffer, firstPartOfBuffer') = let
+              bufferLength = length buffer
+              bufferLength' = length buffer'
+              difference = (bufferLength - bufferLength')
+              context = 8
+              in (take (difference + context) buffer, take context buffer')
+          () <- flip trace (pure ()) $ concat
+            [ "consumed "
+            , show width
+            , " chars ("
+            , take width buffer
+            , ") and returning token "
+            , show t
+            , " from buffer "
+            , show (firstPartOfBuffer ++ "...")
+            , " to "
+            , show (firstPartOfBuffer' ++ "...")
+            ]
+          pure t
