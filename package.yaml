@@ -1,0 +1,58 @@
+name: hap
+version: '0.1.0.0'
+synopsis: A Haskell implementation of Hap.
+category: Language
+author: Jon Purdy
+maintainer: evincarofautumn@gmail.com
+copyright: 2017 Jon Purdy
+license: MIT
+homepage: https://github.com/evincarofautumn/hap-hs#readme
+
+extra-source-files:
+- README.md
+
+dependencies:
+- base >=4.7 && <5
+- parsec
+
+ghc-options:
+- -Wall
+
+default-extensions:
+- DisambiguateRecordFields
+
+library:
+  source-dirs: lib
+  exposed-modules:
+  - Hap.Compiler
+  - Hap.Language
+  - Hap.Operators
+  - Hap.Runtime
+  dependencies:
+  - containers
+  - sdl2
+  - stm
+  - text
+  - transformers
+
+executables:
+  hap:
+    main: Main.hs
+    source-dirs: src
+    dependencies:
+    - containers
+    - hap
+    - haskeline
+    - optparse-applicative
+    - sdl2
+    - stm
+    - text
+
+tests:
+  hap-test:
+    main: Main.hs
+    source-dirs: test
+    dependencies:
+    - HUnit
+    - hap
+    - hspec
