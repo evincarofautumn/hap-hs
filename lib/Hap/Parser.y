@@ -2,7 +2,10 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
-module Hap.Parser where
+module Hap.Parser
+  ( programParser
+  , tokensParser
+  ) where
 
 import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Semigroup (sconcat)

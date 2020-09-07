@@ -1,6 +1,9 @@
 {
 
-module Hap.Tokenizer where
+module Hap.Tokenizer
+  ( AlexReturn(..)
+  , alexScan
+  ) where
 
 import Hap.Token
 import Hap.ParserMonad
