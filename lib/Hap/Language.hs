@@ -1,6 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Hap.Language
   ( BinaryOperator(..)
@@ -14,10 +12,13 @@ module Hap.Language
   , Statement(..)
   , UnaryOperator(..)
   , Value(..)
+  , expressionAnno
+  , identifierText
   , nativeFunction
   , nativeId
   , nativeName
   , parseProgram
+  , statementAnno
   ) where
 
 import Control.Applicative
@@ -29,6 +30,7 @@ import Data.Foldable (asum, for_, traverse_)
 import Data.Functor.Identity (Identity)
 import Data.IntMap (IntMap)
 import Data.List (foldl', intercalate)
+import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Set (Set)
@@ -42,6 +44,7 @@ import Text.Parsec.Expr (buildExpressionParser)
 import Text.Parsec.Pos (SourcePos)
 import Text.Parsec.String (Parser)
 import qualified Data.IntMap as IntMap
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
@@ -53,63 +56,132 @@ import qualified Text.Parsec.Expr as Expr
 -- AST
 --------------------------------------------------------------------------------
 
-data Program = Program [Statement]
-  deriving (Eq, Show)
+data Program anno = Program [Statement anno]
+  deriving stock (Eq, Show)
 
-instance Semigroup Program where
+instance Semigroup (Program anno) where
   Program a <> Program b = Program (a <> b)
 
-instance Monoid Program where
+instance Monoid (Program anno) where
   mempty = Program mempty
 
-data Statement
-  = AtomicStatement !SourcePos !Statement
-  | AfterStatement !SourcePos !Expression !Statement
-  | AsLongAsStatement !SourcePos !Expression !Statement
-  | BlockStatement !SourcePos [Statement]
-  | EmptyStatement !SourcePos
-  | ExpressionStatement !SourcePos !Expression
-  | ForAllStatement !SourcePos !Identifier !Expression !Statement
-  | ForEachStatement !SourcePos !Identifier !Expression !Statement
-  | FunctionStatement !SourcePos !Identifier [(Identifier, Maybe Signature, Maybe Expression)] !(Maybe Signature) !Statement
-  | IfStatement !SourcePos !Expression !Statement !(Maybe Statement)
-  | LastStatement !SourcePos !(Maybe Identifier)
-  | NextStatement !SourcePos !(Maybe Identifier)
-  | OnChangeStatement !SourcePos [Identifier] !Statement
-  | OnSetStatement !SourcePos [Identifier] !Statement
-  -- OnAddStatement !Identifier !Identifier !Statement
-  -- OnRemoveStatement !Identifier !Identifier !Statement
-  | RedoStatement !SourcePos !(Maybe Identifier)
-  | ReturnStatement !SourcePos !(Maybe Expression)
-  | VarStatement !SourcePos [(Identifier, Maybe Signature, Maybe Expression)]
-  | WheneverStatement !SourcePos !Expression !Statement
-  | WhileStatement !SourcePos !Expression !Statement
-  deriving (Eq, Ord, Show)
+-- TODO: Merge statements and expressions, or add statement expressions.
+--
+-- TODO: Use wrappers to make it easier/safer to match, e.g.:
+--
+--     data Annotated anno a = Annotated
+--       { annotatedAnno :: anno
+--       , annotatedItem :: a
+--       }
+--
+--     data Binding anno = Binding
+--       { bindingName :: Identifier
+--       , bindingSignature :: Maybe (Signature anno)
+--       , bindingInitializer :: Maybe (Expression anno)
+--       }
+--
+--     data Statement anno
+--       ...
+--       | VarStatement (Annotated anno [Binding anno])
+--       ...
+--
+data Statement anno
+  = AtomicStatement anno !(Statement anno)
+  -- AsyncStatement anno
+  | AfterStatement anno !(Expression anno) !(Statement anno)
+  | AsLongAsStatement anno !(Expression anno) !(Statement anno)
+  | BlockStatement anno [Statement anno]
+  | EmptyStatement anno
+  | ExpressionStatement anno !(Expression anno)
+  | ForAllStatement anno !Identifier !(Expression anno) !(Statement anno)
+  | ForEachStatement anno !Identifier !(Expression anno) !(Statement anno)
+  | FunctionStatement anno
+    !Identifier
+    [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
+    !(Maybe (Signature anno))
+    !(Statement anno)
+  | IfStatement anno
+    !(Expression anno)
+    !(Statement anno)
+    !(Maybe (Statement anno))
+  | LastStatement anno !(Maybe Identifier)
+  | NextStatement anno !(Maybe Identifier)
+  | OnChangeStatement anno [Identifier] !(Statement anno)
+  | OnSetStatement anno [Identifier] !(Statement anno)
+  -- OnAddStatement !Identifier !Identifier !(Statement anno)
+  -- OnRemoveStatement !Identifier !Identifier !(Statement anno)
+  | RedoStatement anno !(Maybe Identifier)
+  | ReturnStatement anno !(Maybe (Expression anno))
+  | VarStatement anno [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
+  | WheneverStatement anno !(Expression anno) !(Statement anno)
+  | WhileStatement anno !(Expression anno) !(Statement anno)
+  deriving stock (Eq, Ord, Show)
 
-data Expression
-  = LiteralExpression !SourcePos !Literal
-  | IdentifierExpression !SourcePos !Identifier
-  | SubscriptExpression !SourcePos !Expression [Expression]
-  | DotExpression !SourcePos !Expression !Identifier
-  | CallExpression !SourcePos !Expression [Expression]
-  | LetExpression !SourcePos [(Identifier, Maybe Signature, Expression)] !Expression
-  | GroupExpression !SourcePos !Expression
-  | UnaryExpression !SourcePos !UnaryOperator !Expression
-  | BinaryExpression !SourcePos !BinaryOperator !Expression !Expression
-  | IfExpression !SourcePos !Expression !Expression !Expression
-  deriving (Eq, Ord, Show)
+statementAnno :: Statement anno -> anno
+statementAnno = \ case
+  AtomicStatement     anno _       -> anno
+  AfterStatement      anno _ _     -> anno
+  AsLongAsStatement   anno _ _     -> anno
+  BlockStatement      anno _       -> anno
+  EmptyStatement      anno         -> anno
+  ExpressionStatement anno _       -> anno
+  ForAllStatement     anno _ _ _   -> anno
+  ForEachStatement    anno _ _ _   -> anno
+  FunctionStatement   anno _ _ _ _ -> anno
+  IfStatement         anno _ _ _   -> anno
+  LastStatement       anno _       -> anno
+  NextStatement       anno _       -> anno
+  OnChangeStatement   anno _ _     -> anno
+  OnSetStatement      anno _ _     -> anno
+  RedoStatement       anno _       -> anno
+  ReturnStatement     anno _       -> anno
+  VarStatement        anno _       -> anno
+  WheneverStatement   anno _ _     -> anno
+  WhileStatement      anno _ _     -> anno
 
-data Literal
+data Expression anno
+  = LiteralExpression anno !(Literal anno)
+  | IdentifierExpression anno !Identifier
+  | SubscriptExpression anno !(Expression anno) [Expression anno]
+  | DotExpression anno !(Expression anno) !Identifier
+  | CallExpression anno !(Expression anno) [Expression anno]
+  | LetExpression anno
+    [(Identifier, Maybe (Signature anno), (Expression anno))]
+    !(Expression anno)
+  | GroupExpression anno !(Expression anno)
+  | UnaryExpression anno !UnaryOperator !(Expression anno)
+  | BinaryExpression anno !BinaryOperator !(Expression anno) !(Expression anno)
+  | IfExpression anno !(Expression anno) !(Expression anno) !(Expression anno)
+  deriving stock (Eq, Ord, Show)
+
+expressionAnno :: Expression anno -> anno
+expressionAnno = \ case
+  LiteralExpression    anno _     -> anno
+  IdentifierExpression anno _     -> anno
+  SubscriptExpression  anno _ _   -> anno
+  DotExpression        anno _ _   -> anno
+  CallExpression       anno _ _   -> anno
+  LetExpression        anno _ _   -> anno
+  GroupExpression      anno _     -> anno
+  UnaryExpression      anno _ _   -> anno
+  BinaryExpression     anno _ _ _ -> anno
+  IfExpression         anno _ _ _ -> anno
+
+data Literal anno
   = BooleanLiteral !Bool
   | FloatLiteral !Double
   | IntegerLiteral !Integer
   | TextLiteral !Text
   | NullLiteral
-  | ListLiteral [Expression]
-  | MapLiteral [(Expression, Expression)]
-  | SetLiteral [Expression]
-  | FunctionLiteral !(Maybe Identifier) [(Identifier, Maybe Signature, Maybe Expression)] !(Maybe Signature) !Statement
-  deriving (Eq, Ord, Show)
+  | ListLiteral [Expression anno]
+  | MapLiteral [(Expression anno, Expression anno)]
+  | SetLiteral [Expression anno]
+  | FunctionLiteral
+    !(Maybe Identifier)
+    [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
+    !(Maybe (Signature anno))
+    !(Statement anno)
+  deriving stock (Eq, Ord, Show)
 
 data UnaryOperator
   = UnaryEach
@@ -117,7 +189,7 @@ data UnaryOperator
   | UnaryMinus
   | UnaryNot
   | UnaryPlus
-  deriving (Eq, Ord, Show)
+  deriving stock (Eq, Ord, Show)
 
 -- Note [Each and Every]:
 --
@@ -186,31 +258,40 @@ data BinaryOperator
   | BinaryImplies
   -- Assignment
   | BinaryAssign
-  deriving (Eq, Ord, Show)
+  deriving stock (Eq, Ord, Show)
 
-data Signature
-  = ApplicationSignature !SourcePos !Signature [Signature]
-  | ConstructorSignature !SourcePos !Identifier
-  | FunctionSignature !SourcePos [Signature] !Signature
-  deriving (Eq, Ord, Show)
+data Signature anno
+  = ApplicationSignature anno !(Signature anno) [Signature anno]
+  | ConstructorSignature anno !Identifier
+  | FunctionSignature anno [Signature anno] !(Signature anno)
+  deriving stock (Eq, Ord, Show)
 
-newtype Identifier = Identifier { identifierText :: Text }
-  deriving (Eq, Ord)
+newtype Identifier = Identifier { getIdentifier :: NonEmpty Text }
+  deriving stock (Eq, Ord)
+
+identifierText :: Identifier -> Text
+identifierText = Text.intercalate " " . NonEmpty.toList . getIdentifier
 
 instance Show Identifier where
-  show (Identifier identifier) = Text.unpack identifier
+  show = show . Text.unpack . identifierText
 
 instance IsString Identifier where
-  fromString = Identifier . fromString
+  -- TODO: Avoid partiality?
+  fromString
+    = Identifier
+    . NonEmpty.fromList
+    . filter (not . Text.null)
+    . Text.split (== ' ')
+    . fromString
 
 --------------------------------------------------------------------------------
 -- Parsing
 --------------------------------------------------------------------------------
 
-parseProgram :: FilePath -> String -> Either ParseError Program
+parseProgram :: FilePath -> String -> Either ParseError (Program SourcePos)
 parseProgram path source = Parsec.parse programParser path source
   where
-    programParser :: Parser Program
+    programParser :: Parser (Program SourcePos)
     programParser = Program
       <$> Parsec.between Parsec.spaces Parsec.eof (many statementParser)
 
@@ -254,7 +335,7 @@ parseProgram path source = Parsec.parse programParser path source
     quoted :: Parser a -> Parser a
     quoted = Parsec.between (Parsec.char '"') (Parsec.char '"')
 
-    statementParser :: Parser Statement
+    statementParser :: Parser (Statement SourcePos)
     statementParser = (<?> "statement") $ asum
 
       [ AtomicStatement
@@ -299,11 +380,13 @@ parseProgram path source = Parsec.parse programParser path source
         <*> statementParser
 
       -- See note [Dangling Else].
+{-
       , IfStatement
         <$> (getSourcePos <* keyword "if")
         <*> (grouped expressionParser <?> "'if' statement condition")
         <*> statementParser
         <*> Parsec.optionMaybe (keyword "else" *> statementParser)
+-}
 
       , LastStatement
         <$> (getSourcePos <* keyword "last")
@@ -364,11 +447,11 @@ parseProgram path source = Parsec.parse programParser path source
 
       ]
 
-    expressionParser :: Parser Expression
+    expressionParser :: Parser (Expression SourcePos)
     expressionParser = buildExpressionParser operatorTable termParser
       where
 
-        operatorTable :: [[Expr.Operator String () Identity Expression]]
+        operatorTable :: [[Expr.Operator String () Identity (Expression SourcePos)]]
         operatorTable =
           -- Prefix
           [ [ prefix (keyword "each") UnaryEach
@@ -428,7 +511,7 @@ parseProgram path source = Parsec.parse programParser path source
             prefix
               :: Parser a
               -> UnaryOperator
-              -> Expr.Operator String () Identity Expression
+              -> Expr.Operator String () Identity (Expression SourcePos)
             prefix parser unaryOperator = Expr.Prefix do
               pos <- getSourcePos <* parser
               pure $ UnaryExpression pos unaryOperator
@@ -437,13 +520,13 @@ parseProgram path source = Parsec.parse programParser path source
               :: Parser a
               -> Expr.Assoc
               -> BinaryOperator
-              -> Expr.Operator String () Identity Expression
+              -> Expr.Operator String () Identity (Expression SourcePos)
             binary parser associativity binaryOperator
               = flip Expr.Infix associativity do
               pos <- getSourcePos <* parser
               pure $ BinaryExpression pos binaryOperator
 
-        termParser :: Parser Expression
+        termParser :: Parser (Expression SourcePos)
         termParser = (<?> "expression term") do
           prefix <- asum
 
@@ -491,7 +574,7 @@ parseProgram path source = Parsec.parse programParser path source
             Parsec.unexpected $ "unknown escape '" ++ [unknown] ++ "'"
           ]
 
-        expressionSuffixParser :: Parser (Expression -> Expression)
+        expressionSuffixParser :: Parser (Expression SourcePos -> Expression SourcePos)
         expressionSuffixParser = do
           pos <- getSourcePos
           asum
@@ -508,7 +591,7 @@ parseProgram path source = Parsec.parse programParser path source
               pure \ prefix -> CallExpression pos prefix arguments
             ]
 
-        literalParser :: Parser Literal
+        literalParser :: Parser (Literal SourcePos)
         literalParser = (<?> "literal") $ asum
           [ BooleanLiteral <$> asum
             [ True <$ keyword "true"
@@ -573,7 +656,7 @@ parseProgram path source = Parsec.parse programParser path source
             textLiteralParser = Text.pack
               <$> (quoted (many (character <|> escape)) <* Parsec.spaces)
 
-            keyValuePair :: Parser (Expression, Maybe Expression)
+            keyValuePair :: Parser (Expression SourcePos, Maybe (Expression SourcePos))
             keyValuePair = do
               pos <- getSourcePos
               asum
@@ -593,7 +676,7 @@ parseProgram path source = Parsec.parse programParser path source
                   pure (key, Nothing)
                 ]
 
-    parameterListParser :: Parser [(Identifier, Maybe Signature, Maybe Expression)]
+    parameterListParser :: Parser [(Identifier, Maybe (Signature SourcePos), Maybe (Expression SourcePos))]
     parameterListParser
       = namedGrouped "beginning of parameter list" "end of parameter list"
         (Parsec.sepEndBy
@@ -608,7 +691,7 @@ parseProgram path source = Parsec.parse programParser path source
     getSourcePos = Parsec.statePos <$> Parsec.getParserState
 
     identifierParser :: Parser Identifier
-    identifierParser = Identifier . Text.pack
+    identifierParser = Identifier . (:| []) . Text.pack
       <$> ((:)
         <$> Parsec.satisfy startsIdentifier
         <*> (many (Parsec.satisfy continuesIdentifier) <* Parsec.spaces))
@@ -622,7 +705,7 @@ parseProgram path source = Parsec.parse programParser path source
     isOperator :: Char -> Bool
     isOperator = (`elem` ("!#$%&*+-./<=>?@\\^|~" :: String))
 
-    signatureParser :: Parser Signature
+    signatureParser :: Parser (Signature SourcePos)
     signatureParser = (<?> "type signature") do
       prefix <- asum
         [ do
@@ -638,7 +721,7 @@ parseProgram path source = Parsec.parse programParser path source
 
     -- Currently this only supports type applications such as "list(int)" or
     -- "map(text, int)" but it should be extended as the type system evolves.
-    signatureSuffixParser :: Parser (Signature -> Signature)
+    signatureSuffixParser :: Parser (Signature SourcePos -> Signature SourcePos)
     signatureSuffixParser = do
       pos <- getSourcePos
       arguments <- grouped
@@ -709,9 +792,9 @@ data Value
 {-
   | FunctionValue
     !(Maybe Identifier)
-    [(Identifier, Maybe Signature, Maybe Expression)]
-    !(Maybe Signature)
-    !Statement
+    [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
+    !(Maybe (Signature anno))
+    !(Statement anno)
     !(Hap IO ())
 -}
 
@@ -811,7 +894,7 @@ instance Show Value where
 -}
 
 newtype NativeId = NativeId Int
-  deriving (Eq, Ord, Show)
+  deriving stock (Eq, Ord, Show)
 
 type NativeFunction m = Env m -> [Value] -> m Value
 

@@ -19,6 +19,7 @@ import Data.Maybe (fromMaybe)
 import Hap.Compiler (Context, compile, newEmptyContext)
 import Hap.Language (parseProgram)
 import Hap.Runtime (Env(..), Flag(..), newEmptyEnv, run)
+import Hap.ParserWrapper (parse)
 import Options.Applicative.Arrows (asA, runA)
 import System.Console.Haskeline (InputT, getInputLine, outputStrLn, runInputT)
 import System.Exit (ExitCode(..), exitWith)
@@ -260,6 +261,10 @@ newRepl flags = do
               outputStrLn $ "Unknown command '" ++ command ++ "'."
               loop
           Nothing -> do
+            let tokens = parse line
+            outputStrLn $ show tokens
+            loop
+            {-
             case parseProgram "<interactive>" line of
               Left parseError -> do
                 outputStrLn $ show parseError
@@ -271,6 +276,7 @@ newRepl flags = do
                   Right compiled -> do
                     run env compiled
                 loop
+            -}
   pure (context, env, runInputT Haskeline.defaultSettings loop)
 
 exit :: Int -> IO a

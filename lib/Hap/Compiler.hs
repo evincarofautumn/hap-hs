@@ -1,5 +1,4 @@
 {-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 module Hap.Compiler
   ( SymbolMap
@@ -36,13 +35,22 @@ newEmptyContext = do
     , contextReadSymbols = liftIO $ readIORef symbols
     }
 
-compile :: (MonadIO m) => Context m -> Program -> Either CompileError (HapT m ())
+compile
+  :: (MonadIO m, Show anno)
+  => Context m
+  -> Program anno
+  -> Either CompileError (HapT m ())
 compile context (Program statements)
   = fmap sequence_ (traverse (compileStatement context) statements)
 
 type CompileError = String
 
-compileStatement :: forall m. (MonadIO m) => Context m -> Statement -> Either CompileError (HapT m ())
+compileStatement
+  :: forall m anno
+  . (MonadIO m, Show anno)
+  => Context m
+  -> Statement anno
+  -> Either CompileError (HapT m ())
 compileStatement context statement = case statement of
 {-
   AtomicStatement !SourcePos !Statement
@@ -99,8 +107,8 @@ compileStatement context statement = case statement of
     where
 
       compileBinding
-        :: (Identifier, Maybe Signature, Maybe Expression)
-        -> Either CompileError (Identifier, Maybe Signature, Maybe (HapT m Value))
+        :: (Identifier, Maybe (Signature anno), Maybe (Expression anno))
+        -> Either CompileError (Identifier, Maybe (Signature anno), Maybe (HapT m Value))
       compileBinding (identifier, signature, initializer) = case initializer of
         Just expression -> do
           compiledExpression <- compileExpression context expression
@@ -109,7 +117,7 @@ compileStatement context statement = case statement of
           pure (identifier, signature, Nothing)
 
       runInitializer
-        :: (Identifier, Maybe Signature, Maybe (HapT m Value))
+        :: (Identifier, Maybe (Signature anno), Maybe (HapT m Value))
         -> HapT m (Identifier, Cell m Value)
       runInitializer (identifier, signature, initializer) = case initializer of
         Just expression -> do
@@ -138,12 +146,12 @@ compileStatement context statement = case statement of
   _ -> Left $ "TODO: compile statement: " ++ show statement
 
 compileOnStatement
-  :: (MonadIO m)
+  :: (MonadIO m, Show anno)
   => Context m
   -> ([Cell m Value] -> HapT m () -> HapT m a)
-  -> SourcePos
+  -> anno
   -> [Identifier]
-  -> Statement
+  -> Statement anno
   -> Either CompileError (HapT m ())
 compileOnStatement context statement pos vars body = do
   let readSymbols = contextReadSymbols context
@@ -157,7 +165,11 @@ compileOnStatement context statement pos vars body = do
     void $ statement cells compiledBody
     pure ()
 
-compileExpression :: (MonadIO m) => Context m -> Expression -> Either CompileError (HapT m Value)
+compileExpression
+  :: (MonadIO m, Show anno)
+  => Context m
+  -> Expression anno
+  -> Either CompileError (HapT m Value)
 compileExpression context expression = case expression of
   LiteralExpression _pos literal -> case literal of
     BooleanLiteral value -> pure $ pure $ BooleanValue value

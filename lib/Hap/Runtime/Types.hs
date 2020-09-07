@@ -70,7 +70,7 @@ data Env m = Env
 data Flag
   = GraphicsEnabledFlag
   | LoggingEnabledFlag
-  deriving (Enum)
+  deriving stock (Enum)
 
 data Flags = Flags !Word64
 

@@ -1,5 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
-
 module Hap.Runtime
   ( Errors.Cycle(..)
 

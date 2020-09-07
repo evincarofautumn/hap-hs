@@ -19,24 +19,44 @@ ghc-options:
 - -Wall
 
 default-extensions:
+- BangPatterns
 - BlockArguments
+- DerivingVia
 - DisambiguateRecordFields
+- LambdaCase
+- PatternGuards
+- ScopedTypeVariables
+- TypeApplications
+- ViewPatterns
 
 library:
   source-dirs: lib
   exposed-modules:
   - Hap.Compiler
+  - Hap.Data.Monoid
+  - Hap.Data.Semigroup
   - Hap.Language
   - Hap.Operators
+  - Hap.Parse
+  - Hap.Parser
+  - Hap.ParserWrapper
   - Hap.Runtime
   - Hap.Runtime.Errors
   - Hap.Runtime.Types
+  - Hap.Token
+  - Hap.Tokenizer
   dependencies:
+  - array
   - containers
   - sdl2
   - stm
   - text
   - transformers
+  build-tools:
+  - alex
+  - happy
+  ghc-options:
+  - -Wmissing-deriving-strategies
 
 executables:
   hap:
@@ -50,6 +70,8 @@ executables:
     - sdl2
     - stm
     - text
+    ghc-options:
+    - -Wmissing-deriving-strategies
 
 tests:
   hap-test:
@@ -59,3 +81,5 @@ tests:
     - HUnit
     - hap
     - hspec
+    ghc-options:
+    - -Wmissing-deriving-strategies

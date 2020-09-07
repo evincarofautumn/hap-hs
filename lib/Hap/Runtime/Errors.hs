@@ -15,7 +15,7 @@ import Hap.Runtime.Types
 -- The exception raised when a dependency cycle is detected.
 data Cycle where
   Cycle :: !(SomeCell m) -> Cycle
-  deriving (Typeable)
+  deriving stock (Typeable)
 
 --------------------------------------------------------------------------------
 -- Instances
