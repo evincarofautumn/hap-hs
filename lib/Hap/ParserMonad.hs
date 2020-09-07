@@ -1,5 +1,3 @@
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hap.ParserMonad

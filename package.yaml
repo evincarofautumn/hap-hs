@@ -26,6 +26,7 @@ default-extensions:
 - DisambiguateRecordFields
 - GeneralizedNewtypeDeriving
 - LambdaCase
+- NamedFieldPuns
 - PatternGuards
 - ScopedTypeVariables
 - TypeApplications
