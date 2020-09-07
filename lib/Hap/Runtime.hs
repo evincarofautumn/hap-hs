@@ -35,6 +35,7 @@ import Control.Exception (throwIO)
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO(..))
 import Data.Bits
+import Data.Foldable (for_, traverse_)
 import Data.IORef
 import Data.IntSet (IntSet)
 import Hap.Runtime.Errors
@@ -146,7 +147,7 @@ get cell = HapT \ !env -> do
         [name, ".cache = Full ", show v]
       liftIO $ writeIORef (cellSources cell) ds
       wc <- makeWeakCell cell
-      liftIO $ forM_ ds \ (SomeCell d) -> modifyIORef' (cellSinks d) (wc :)
+      liftIO $ for_ ds \ (SomeCell d) -> modifyIORef' (cellSinks d) (wc :)
       pure (v, [SomeCell cell])
     Blackhole -> liftIO $ throwIO $ Cycle $ SomeCell cell
   logMessage env "}"
@@ -211,10 +212,10 @@ onSet cells = on (IntSet.fromList $ map cellId cells) . Set
 -- TODO: Implement this as a function or macro within Hap.
 onChange :: (Eq a, Show a, MonadIO m) => [Cell m a] -> HapT m () -> HapT m Id
 onChange cells action = do
-  values <- mapM get cells
+  values <- traverse get cells
   state <- new (Just "'onChange' set") $ pure values
   onSet cells do
-    values' <- mapM get cells
+    values' <- traverse get cells
     state' <- get state
     set state $ pure values'
     when (values' /= state') action
@@ -240,13 +241,13 @@ invalidate env sc@(SomeCell cell) = do
     writeIORef (cellSinks cell) []
     writeIORef (cellCache cell) Empty
     writeIORef (cellSources cell) []
-  forM_ rs $ removeObserver sc
-  forM_ os $ invalidateWeak env
+  for_ rs $ removeObserver sc
+  for_ os $ invalidateWeak env
   notifySet env sc
 
 -- Invalidate a weak cell if it's not expired.
 invalidateWeak :: (MonadIO m) => Env m -> WeakCell m -> m ()
-invalidateWeak env = mapM_ (invalidate env) <=< strengthen
+invalidateWeak env = traverse_ (invalidate env) <=< strengthen
 
 -- Notify the environment that a cell was written.
 notifySet :: (MonadIO m) => Env m -> SomeCell m -> m ()
@@ -254,7 +255,7 @@ notifySet env someCell = do
   let notifiedId = someCellId someCell
   listeners <- liftIO $ readIORef $ envListeners env
   -- Listeners are evaluated in the order they were added.
-  forM_ (reverse listeners) \ (_listenerId, cells, handler) -> do
+  for_ (reverse listeners) \ (_listenerId, cells, handler) -> do
     when (notifiedId `IntSet.member` cells) case handler of
       Set action -> enqueue env action
       _ -> pure ()
@@ -273,7 +274,7 @@ sequencePointM env = do
   logMessage env "sequence_point {"
   queue <- liftIO $ readIORef $ envQueue env
   liftIO $ writeIORef (envQueue env) []
-  forM_ (reverse queue) $ run env
+  for_ (reverse queue) $ run env
   logMessage env "}"
 
 sequencePoint :: (MonadIO m) => HapT m ()
