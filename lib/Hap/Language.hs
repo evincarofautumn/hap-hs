@@ -20,43 +20,32 @@ module Hap.Language
   , statementAnno
   ) where
 
-import Control.Applicative
 import Control.Concurrent.STM
 import Control.Monad.IO.Class
-import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
-import Data.Either (partitionEithers)
-import Data.Foldable (asum, for_, traverse_)
-import Data.Functor.Identity (Identity)
+import Data.Foldable (for_, traverse_)
 import Data.IntMap (IntMap)
-import Data.List (foldl', intercalate)
-import Data.List.NonEmpty (NonEmpty((:|)))
+import Data.List (intercalate)
+import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import Data.Text (Text)
 import GHC.Exts (IsString(..))
-import Hap.Operators
 import Hap.Runtime (Env(..))
 import SDL (($=))
-import Text.Parsec (ParseError, (<?>))
-import Text.Parsec.Expr (buildExpressionParser)
-import Text.Parsec.Pos (SourcePos)
-import Text.Parsec.String (Parser)
 import qualified Data.IntMap as IntMap
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified SDL
-import qualified Text.Parsec as Parsec
-import qualified Text.Parsec.Expr as Expr
 
 --------------------------------------------------------------------------------
 -- AST
 --------------------------------------------------------------------------------
 
 data Program anno = Program [Statement anno]
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Functor, Show)
 
 instance Semigroup (Program anno) where
   Program a <> Program b = Program (a <> b)
@@ -114,7 +103,7 @@ data Statement anno
   | VarStatement anno [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
   | WheneverStatement anno !(Expression anno) !(Statement anno)
   | WhileStatement anno !(Expression anno) !(Statement anno)
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Functor, Ord, Show)
 
 statementAnno :: Statement anno -> anno
 statementAnno = \ case
@@ -151,7 +140,7 @@ data Expression anno
   | UnaryExpression anno !UnaryOperator !(Expression anno)
   | BinaryExpression anno !BinaryOperator !(Expression anno) !(Expression anno)
   | IfExpression anno !(Expression anno) !(Expression anno) !(Expression anno)
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Functor, Ord, Show)
 
 expressionAnno :: Expression anno -> anno
 expressionAnno = \ case
@@ -180,7 +169,7 @@ data Literal anno
     [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
     !(Maybe (Signature anno))
     !(Statement anno)
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Functor, Ord, Show)
 
 data UnaryOperator
   = UnaryEach
@@ -263,7 +252,7 @@ data Signature anno
   = ApplicationSignature anno !(Signature anno) [Signature anno]
   | ConstructorSignature anno !Identifier
   | FunctionSignature anno [Signature anno] !(Signature anno)
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Functor, Ord, Show)
 
 newtype Identifier = Identifier { getIdentifier :: NonEmpty Text }
   deriving stock (Eq, Ord)

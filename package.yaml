@@ -22,6 +22,7 @@ ghc-options:
 default-extensions:
 - BangPatterns
 - BlockArguments
+- DeriveFunctor
 - DerivingVia
 - DisambiguateRecordFields
 - GeneralizedNewtypeDeriving
