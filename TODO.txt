@@ -1,0 +1,9 @@
+Use GADT syntax for existentials
+Use BlockArguments
+Haddockify docs
+Add Haddocks to modules
+Update links in Haddock docs
+FlagSet -> Flags
+{mapM{,_},forM{,_}} -> {traverse{,_},for{,_}}
+Postfix 'qualified'
+Add logging flag
