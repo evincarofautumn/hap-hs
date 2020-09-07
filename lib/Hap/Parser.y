@@ -9,6 +9,7 @@ import Data.Semigroup (sconcat)
 import Data.Text (Text)
 import Hap.Language
 import Hap.Parse
+import Hap.ParserMonad
 import Hap.Token
 import Hap.Tokenizer
 import qualified Data.List.NonEmpty as NonEmpty
@@ -16,12 +17,12 @@ import qualified Data.Text as Text
 
 }
 
-%name programParser Program
-%name tokensParser Tokens
+%name      programParser Program
+%name      tokensParser Tokens
 %tokentype { Token SourceSpan }
-%monad { Parser } { thenP } { returnP }
-%lexer { happyTokenizer } { EofToken }
-%error { errorP }
+%monad     { Parser } -- { thenP } { returnP }
+%lexer     { hapLexToken } { EofToken }
+-- %error { errorP }
 
 %token
 
@@ -29,7 +30,6 @@ import qualified Data.Text as Text
 -- Primitive Tokens
 --------------------------------------------------------------------------------
 
-  token    { $$ }
   word     { WordToken   $$ }
   integer  { DigitsToken $$ }
 
@@ -108,6 +108,12 @@ import qualified Data.Text as Text
   whileKeyword    { KeywordToken (_, WhileKeyword)    }
 
 --------------------------------------------------------------------------------
+-- Any Token (MUST BE LAST)
+--------------------------------------------------------------------------------
+
+  token { $$ }
+
+--------------------------------------------------------------------------------
 -- Precedences
 --------------------------------------------------------------------------------
 
@@ -129,13 +135,11 @@ Program :: { Program SourceSpan }
   : Statement { Program [$1] }
 
 Statement :: { Statement SourceSpan }
-
-  -- : atomicKeyword Statement { atomicStatement $1 $2 }
-  -- | IfStatement             { $1 }
-  -- | '{' many(Statement) '}' { blockStatement $1 $2 $3 }
-  -- | Expression ';'          { expressionStatement $1 $2 }
-
-  : ';'                     { emptyStatement $1 }
+  : atomicKeyword Statement { atomicStatement $1 $2 }
+  | IfStatement             { $1 }
+  | '{' many(Statement) '}' { blockStatement $1 $2 $3 }
+  | Expression ';'          { expressionStatement $1 $2 }
+  | ';'                     { emptyStatement $1 }
 
 IfStatement :: { Statement SourceSpan }
   : ifKeyword '(' Expression ')' Statement

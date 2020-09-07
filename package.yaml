@@ -41,6 +41,7 @@ library:
   - Hap.Operators
   - Hap.Parse
   - Hap.Parser
+  - Hap.ParserMonad
   - Hap.ParserWrapper
   - Hap.Runtime
   - Hap.Runtime.Errors

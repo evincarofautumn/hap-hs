@@ -9,7 +9,7 @@ module Hap.ParserWrapper
 import Control.Arrow (left)
 import Data.List (stripPrefix)
 import Hap.Language (Program)
-import Hap.Parse (Parser, runParser)
+import Hap.ParserMonad (Parser, runParser)
 import Hap.Parser (programParser, tokensParser)
 import Hap.Token (Column(..), Row(..), SourceSpan, Token)
 
