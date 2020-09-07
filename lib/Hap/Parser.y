@@ -8,10 +8,18 @@ import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Semigroup (sconcat)
 import Data.Text (Text)
 import Hap.Language
-import Hap.Parse
-import Hap.ParserMonad
-import Hap.Token
-import Hap.Tokenizer
+  ( Expression(..)
+  , Identifier(..)
+  , Literal(..)
+  , Program(..)
+  , Statement(..)
+  , expressionAnno
+  , statementAnno
+  )
+import Hap.Parse (lexToken)
+import Hap.ParserMonad (Parser, parseFailure)
+import Hap.Token (Keyword(..), Token(..), SourceSpan(..), tokenAnno)
+import Hap.Tokenizer ()
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as Text
 
@@ -20,9 +28,9 @@ import qualified Data.Text as Text
 %name      programParser Program
 %name      tokensParser Tokens
 %tokentype { Token SourceSpan }
-%monad     { Parser } -- { thenP } { returnP }
-%lexer     { hapLexToken } { EofToken }
--- %error { errorP }
+%monad     { Parser }
+%lexer     { lexToken } { EofToken }
+%error     { parseFailure }
 
 %token
 
@@ -132,7 +140,7 @@ Tokens :: { [Token SourceSpan] }
 
 -- Main entry point.
 Program :: { Program SourceSpan }
-  : Statement { Program [$1] }
+  : many(Statement) { Program $1 }
 
 Statement :: { Statement SourceSpan }
   : atomicKeyword Statement { atomicStatement $1 $2 }

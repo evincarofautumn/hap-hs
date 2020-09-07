@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Hap.ParserMonad
   ( Action
@@ -9,48 +10,35 @@ module Hap.ParserMonad
   , StartCode
   , alexGetByte
   , alexInputPrevChar
-  , alexMove
   , andBegin
   , emptyInput
   , emptyState
   , getSourcePosition
-  , happyError
+  , parseFailure
   , returnToken
   , runParser
   , setStartCode
   , sourceSpan
   , spanned
+  , startColumn
   , startPosition
+  , startRow
   ) where
 
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.State (StateT(..), evalStateT, modify)
 import Data.Char (ord)
 import Data.Text.Prettyprint.Doc (pretty)
-import Data.Word (Word8)
 import Hap.Token
+import qualified Data.Text.Prettyprint.Doc as Pretty
 
+-- TODO: Use structured parse error type instead of 'String'.
 newtype Parser a = Parser
   { unParser
     :: AlexInput
     -> StateT ParserState (Either String) (a, AlexInput) }
   deriving (Applicative, Functor, Monad)
     via (StateT AlexInput (StateT ParserState (Either String)))
-
-{-
-instance Functor Parser where
-  fmap = liftM
-
-instance Applicative Parser where
-  pure = return
-  (<*>) = ap
-
-instance Monad Parser where
-  return x = Parser \ input -> pure (input, x)
-  Parser m >>= k = Parser \ input -> do
-    (input', x) <- m input
-    unParser (k x) input'
--}
 
 instance MonadFail Parser where
   fail = Parser . const . lift . Left
@@ -99,51 +87,92 @@ andBegin :: Action -> StartCode -> Action
 returnToken :: Token SourceSpan -> Action
 returnToken token (input, _) = lift $ pure (token, input)
 
--- Inputs
+--------------------------------------------------------------------------------
+-- Input
+--------------------------------------------------------------------------------
 
+-- | Lexer input state.
+--
 -- TODO: Derive lenses.
+--
+-- See note [Alex Name].
 data AlexInput = AlexInput
   { inputSourceName :: !FilePath
-  , inputPosition :: !SourcePosition
-  , inputBuffer :: !String
+  , inputPosition   :: !SourcePosition
+  , inputBuffer     :: !String
   }
 
-alexGetByte :: AlexInput -> Maybe (Word8, AlexInput)
+-- | Get the next “byte” (character) of input.
+--
+-- See note [Alex Name].
+alexGetByte :: AlexInput -> Maybe (Int, AlexInput)
 alexGetByte input = case inputBuffer input of
   x : xs -> Just
-    ( fromIntegral (ord x)
+    ( ord x
     , input
-      { inputPosition = alexMove (inputPosition input) x
+      { inputPosition = updateSourcePosition x (inputPosition input)
       , inputBuffer   = xs
       }
     )
   [] -> Nothing
 
 alexInputPrevChar :: AlexInput -> Char
-alexInputPrevChar _ = error "Lexer doesn't implement alexInputPrevChar"
+alexInputPrevChar _
+  = error "Lexer doesn't implement alexInputPrevChar for left contexts"
 
-happyError :: Parser a
-happyError = do
-  p <- getSourcePosition
-  fail $ "Parse error at " ++ show (pretty p)
+parseFailure :: Token SourceSpan -> Parser a
+parseFailure currentToken = do
+  sourceName <- getSourceName
+  position <- getSourcePosition
+  fail $ show $ Pretty.hsep
+    [ Pretty.hcat
+      [ pretty sourceName
+      , Pretty.colon
+      , pretty position
+      , Pretty.colon
+      ]
+    , "parse error at"
+    , Pretty.squotes (pretty currentToken)
+    ]
 
+-- Note [Alex Name]:
+--
+-- The name of anything annotated with this note is significant to Alex, because
+-- it’s referenced from the generated code, and thus can’t be changed.
+
+--------------------------------------------------------------------------------
 -- Positions
+--------------------------------------------------------------------------------
+
+getSourceName :: Parser String
+getSourceName = Parser \ input@AlexInput { inputSourceName }
+  -> pure (inputSourceName, input)
 
 getSourcePosition :: Parser SourcePosition
 getSourcePosition = Parser \ input@AlexInput { inputPosition }
   -> pure (inputPosition, input)
 
-alexMove :: SourcePosition -> Char -> SourcePosition
-alexMove (SourcePosition (Offset offset) (Row row) (Column column)) character
+updateSourcePosition :: Char -> SourcePosition -> SourcePosition
+updateSourcePosition character
+  (SourcePosition (Offset offset) (Row row) (Column column))
   = uncurry (SourcePosition (Offset (succ offset))) case character of
-    '\n' -> (Row (succ row), Column 1)
-    '\t' -> (Row row, Column ((column + 8) `div` 8 * 8))
+    '\n' -> (Row (row + 1), startColumn)
+    '\t' -> (Row row, Column ((column + tabWidth) `div` tabWidth * tabWidth))
     _    -> (Row row, Column (column + 1))
+  where
+    tabWidth :: Int
+    tabWidth = 8
 
 -- data SourcePosition = SourcePosition !Offset !Row !Column
 
 startPosition :: SourcePosition
-startPosition = SourcePosition (Offset 0) (Row 1) (Column 1)
+startPosition = SourcePosition (Offset 0) startRow startColumn
+
+startRow :: Row
+startRow = Row 1
+
+startColumn :: Column
+startColumn = Column 1
 
 -- TODO: Account for multi-line tokens; width is just characters.
 sourceSpan :: SourcePosition -> Int -> SourceSpan
