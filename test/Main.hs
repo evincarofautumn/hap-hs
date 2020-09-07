@@ -3,13 +3,22 @@
 module Main (main) where
 
 import Control.Monad (void)
-import Data.IORef
-import Hap.Compiler
+import Data.IORef (modifyIORef', newIORef, readIORef)
+import Hap.Compiler (compile, newEmptyContext)
 import Hap.Language
-import Hap.Runtime
+  ( BinaryOperator(..)
+  , Expression(..)
+  , Literal(..)
+  , Program(..)
+  , Signature(..)
+  , Statement(..)
+  , UnaryOperator(..)
+  )
+import Hap.ParserWrapper (ParseError, parseProgram)
+import Hap.Token (SourceSpan)
+import Hap.Runtime (Flag, newEmptyEnv, run)
 import Test.HUnit (assertBool, assertFailure)
 import Test.Hspec (Spec, describe, hspec, specify)
-import Text.Parsec (ParseError)
 
 main :: IO ()
 main = hspec spec
@@ -25,742 +34,820 @@ spec = do
         Right (Program [EmptyStatement _]) -> True
         _ -> False
 
-    specify "'atomic' statement" do
+    describe "'atomic' statement" do
 
-      parseTest "atomic;" \ program -> case program of
-        Right (Program [AtomicStatement _ (EmptyStatement _)]) -> True
-        _ -> False
+      specify "empty" do
+        parseTest "atomic;" \ program -> case program of
+          Right (Program [AtomicStatement _ (EmptyStatement _)]) -> True
+          _ -> False
 
-      parseTest "atomic ;" \ program -> case program of
-        Right (Program [AtomicStatement _ (EmptyStatement _)]) -> True
-        _ -> False
+      specify "empty (space)" do
+        parseTest "atomic ;" \ program -> case program of
+          Right (Program [AtomicStatement _ (EmptyStatement _)]) -> True
+          _ -> False
 
-    specify "block statement" do
+    describe "block statement" do
 
-      parseTest "{}" \ program -> case program of
-        Right (Program [BlockStatement _ []]) -> True
-        _ -> False
+      specify "null" do
+        parseTest "{}" \ program -> case program of
+          Right (Program [BlockStatement _ []]) -> True
+          _ -> False
 
-      parseTest "{;}" \ program -> case program of
-        Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
-        _ -> False
+      specify "singleton empty" do
+        parseTest "{;}" \ program -> case program of
+          Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
+          _ -> False
 
-      parseTest "{ ;}" \ program -> case program of
-        Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
-        _ -> False
+      specify "singleton empty (space before)" do
+        parseTest "{ ;}" \ program -> case program of
+          Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
+          _ -> False
 
-      parseTest "{; }" \ program -> case program of
-        Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
-        _ -> False
+      specify "singleton empty (space after)" do
+        parseTest "{; }" \ program -> case program of
+          Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
+          _ -> False
 
-      parseTest "{ ; }" \ program -> case program of
-        Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
-        _ -> False
+      specify "singleton empty (space around)" do
+        parseTest "{ ; }" \ program -> case program of
+          Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
+          _ -> False
 
-      parseTest "{;;}" \ program -> case program of
-        Right (Program
-          [ BlockStatement _
-            [ EmptyStatement _
+      specify "two empties" do
+        parseTest "{;;}" \ program -> case program of
+          Right (Program
+            [ BlockStatement _
+              [ EmptyStatement _
+              , EmptyStatement _
+              ]
+            ]) -> True
+          _ -> False
+
+      specify "two empties (space around)" do
+        parseTest "{ ;; }" \ program -> case program of
+          Right (Program
+            [ BlockStatement _
+              [ EmptyStatement _
+              , EmptyStatement _
+              ]
+            ]) -> True
+          _ -> False
+
+      specify "two empties (space around & between)" do
+        parseTest "{ ; ; }" \ program -> case program of
+          Right (Program
+            [ BlockStatement _
+              [ EmptyStatement _
+              , EmptyStatement _
+              ]
+            ]) -> True
+          _ -> False
+
+      specify "singleton empty, null, empty" do
+        parseTest "{;};{}" \ program -> case program of
+          Right (Program
+            [ BlockStatement _
+              [ EmptyStatement _
+              ]
             , EmptyStatement _
-            ]
-          ]) -> True
-        _ -> False
+            , BlockStatement _ []
+            ]) -> True
+          _ -> False
 
-      parseTest "{ ;; }" \ program -> case program of
-        Right (Program
-          [ BlockStatement _
-            [ EmptyStatement _
-            , EmptyStatement _
-            ]
-          ]) -> True
-        _ -> False
+    describe "loop control statements" do
 
-      parseTest "{ ; ; }" \ program -> case program of
-        Right (Program
-          [ BlockStatement _
-            [ EmptyStatement _
-            , EmptyStatement _
-            ]
-          ]) -> True
-        _ -> False
+      specify "last" do
+        parseTest "last;" \ program -> case program of
+          Right (Program [LastStatement _ Nothing]) -> True
+          _ -> False
 
-      parseTest "{;};{}" \ program -> case program of
-        Right (Program
-          [ BlockStatement _
-            [ EmptyStatement _
-            ]
-          , EmptyStatement _
-          , BlockStatement _ []
-          ]) -> True
-        _ -> False
+      specify "last (space)" do
+        parseTest "last ;" \ program -> case program of
+          Right (Program [LastStatement _ Nothing]) -> True
+          _ -> False
 
-    specify "last/next/redo statements" do
+      specify "last label" do
+        parseTest "last outer;" \ program -> case program of
+          Right (Program [LastStatement _ (Just "outer")]) -> True
+          _ -> False
 
-      parseTest "last;" \ program -> case program of
-        Right (Program [LastStatement _ Nothing]) -> True
-        _ -> False
+      specify "next" do
+        parseTest "next;" \ program -> case program of
+          Right (Program [NextStatement _ Nothing]) -> True
+          _ -> False
 
-      parseTest "last ;" \ program -> case program of
-        Right (Program [LastStatement _ Nothing]) -> True
-        _ -> False
+      specify "next (space)" do
+        parseTest "next ;" \ program -> case program of
+          Right (Program [NextStatement _ Nothing]) -> True
+          _ -> False
 
-      parseTest "last outer;" \ program -> case program of
-        Right (Program [LastStatement _ (Just "outer")]) -> True
-        _ -> False
+      specify "next label" do
+        parseTest "next outer;" \ program -> case program of
+          Right (Program [NextStatement _ (Just "outer")]) -> True
+          _ -> False
 
-      parseTest "next;" \ program -> case program of
-        Right (Program [NextStatement _ Nothing]) -> True
-        _ -> False
+      specify "redo" do
+        parseTest "redo;" \ program -> case program of
+          Right (Program [RedoStatement _ Nothing]) -> True
+          _ -> False
 
-      parseTest "next ;" \ program -> case program of
-        Right (Program [NextStatement _ Nothing]) -> True
-        _ -> False
+      specify "redo (space)" do
+        parseTest "redo ;" \ program -> case program of
+          Right (Program [RedoStatement _ Nothing]) -> True
+          _ -> False
 
-      parseTest "next outer;" \ program -> case program of
-        Right (Program [NextStatement _ (Just "outer")]) -> True
-        _ -> False
-
-      parseTest "redo;" \ program -> case program of
-        Right (Program [RedoStatement _ Nothing]) -> True
-        _ -> False
-
-      parseTest "redo ;" \ program -> case program of
-        Right (Program [RedoStatement _ Nothing]) -> True
-        _ -> False
-
-      parseTest "redo outer;" \ program -> case program of
-        Right (Program [RedoStatement _ (Just "outer")]) -> True
-        _ -> False
+      specify "redo label" do
+        parseTest "redo outer;" \ program -> case program of
+          Right (Program [RedoStatement _ (Just "outer")]) -> True
+          _ -> False
 
     describe "expression statements" do
 
-      specify "literal expressions" do
+      describe "literal expressions" do
 
-        parseTest "true;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (BooleanLiteral True))
-            ]) -> True
-          _ -> False
+        specify "boolean true" do
+          parseTest "true;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (BooleanLiteral True))
+              ]) -> True
+            _ -> False
 
-        parseTest "false;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (BooleanLiteral False))
-            ]) -> True
-          _ -> False
+        specify "boolean false" do
+          parseTest "false;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (BooleanLiteral False))
+              ]) -> True
+            _ -> False
 
-        parseTest "1.0;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (FloatLiteral 1.0))
-            ]) -> True
-          _ -> False
+        specify "integral float" do
+          parseTest "1.0;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (FloatLiteral 1.0))
+              ]) -> True
+            _ -> False
 
-        parseTest "1.5;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (FloatLiteral 1.5))
-            ]) -> True
-          _ -> False
+        specify "float" do
+          parseTest "1.5;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (FloatLiteral 1.5))
+              ]) -> True
+            _ -> False
 
-        parseTest "10.125;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (FloatLiteral 10.125))
-            ]) -> True
-          _ -> False
+        specify "long float" do
+          parseTest "10.125;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (FloatLiteral 10.125))
+              ]) -> True
+            _ -> False
 
-        parseTest "1;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (IntegerLiteral 1))
-            ]) -> True
-          _ -> False
+        specify "integer" do
+          parseTest "1;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (IntegerLiteral 1))
+              ]) -> True
+            _ -> False
 
-        parseTest "1234567890;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (IntegerLiteral 1234567890))
-            ]) -> True
-          _ -> False
+        specify "long integer" do
+          parseTest "1234567890;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (IntegerLiteral 1234567890))
+              ]) -> True
+            _ -> False
 
-        parseTest "\"\";" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (TextLiteral ""))
-            ]) -> True
-          _ -> False
+        specify "empty string" do
+          parseTest "\"\";" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (TextLiteral ""))
+              ]) -> True
+            _ -> False
 
-        parseTest "\"abc123\";" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (TextLiteral "abc123"))
-            ]) -> True
-          _ -> False
+        specify "string" do
+          parseTest "\"abc123\";" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (TextLiteral "abc123"))
+              ]) -> True
+            _ -> False
 
-        parseTest "\"\\\"\\\\\";" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (TextLiteral "\"\\"))
-            ]) -> True
-          _ -> False
+        specify "string escapes" do
+          parseTest "\"\\\"\\\\\";" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (TextLiteral "\"\\"))
+              ]) -> True
+            _ -> False
 
-        parseTest "null;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ NullLiteral)
-            ]) -> True
-          _ -> False
+        specify "null" do
+          parseTest "null;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ NullLiteral)
+              ]) -> True
+            _ -> False
 
-        parseTest "(1);" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _ (IntegerLiteral 1)))
-            ]) -> True
-          _ -> False
+        specify "grouped literal" do
+          parseTest "(1);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _ (IntegerLiteral 1)))
+              ]) -> True
+            _ -> False
 
-        parseTest "[];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (ListLiteral []))
-            ]) -> True
-          _ -> False
+        specify "empty list" do
+          parseTest "[];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (ListLiteral []))
+              ]) -> True
+            _ -> False
 
-        parseTest "[,];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _ (ListLiteral []))
-            ]) -> True
-          _ -> False
+        specify "empty list (trailing comma)" do
+          parseTest "[,];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (ListLiteral []))
+              ]) -> True
+            _ -> False
 
-        parseTest "[1];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _
-                (ListLiteral
-                  [ LiteralExpression _ (IntegerLiteral 1)
-                  ]))
-            ]) -> True
-          _ -> False
+        specify "singleton list" do
+          parseTest "[1];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _
+                  (ListLiteral
+                    [ LiteralExpression _ (IntegerLiteral 1)
+                    ]))
+              ]) -> True
+            _ -> False
 
-        parseTest "[1,2,3];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _
-                (ListLiteral
-                  [ LiteralExpression _ (IntegerLiteral 1)
-                  , LiteralExpression _ (IntegerLiteral 2)
-                  , LiteralExpression _ (IntegerLiteral 3)
-                  ]))
-            ]) -> True
-          _ -> False
+        specify "list" do
+          parseTest "[1,2,3];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _
+                  (ListLiteral
+                    [ LiteralExpression _ (IntegerLiteral 1)
+                    , LiteralExpression _ (IntegerLiteral 2)
+                    , LiteralExpression _ (IntegerLiteral 3)
+                    ]))
+              ]) -> True
+            _ -> False
 
-        parseTest "[1,2,3,];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _
-                (ListLiteral
-                  [ LiteralExpression _ (IntegerLiteral 1)
-                  , LiteralExpression _ (IntegerLiteral 2)
-                  , LiteralExpression _ (IntegerLiteral 3)
-                  ]))
-            ]) -> True
-          _ -> False
+        specify "list (trailing comma)" do
+          parseTest "[1,2,3,];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _
+                  (ListLiteral
+                    [ LiteralExpression _ (IntegerLiteral 1)
+                    , LiteralExpression _ (IntegerLiteral 2)
+                    , LiteralExpression _ (IntegerLiteral 3)
+                    ]))
+              ]) -> True
+            _ -> False
 
-        parseTest
-          "[\n\
-          \  [1, 0],\n\
-          \  [0, 1],\n\
-          \];\n\
-          \\&"
-          \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LiteralExpression _
-                (ListLiteral
-                  [ LiteralExpression _
-                    (ListLiteral
+        specify "nested list" do
+          parseTest
+            "[\n\
+            \  [1, 0],\n\
+            \  [0, 1],\n\
+            \];\n\
+            \\&"
+            \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _
+                  (ListLiteral
+                    [ LiteralExpression _
+                      (ListLiteral
+                        [ LiteralExpression _ (IntegerLiteral 1)
+                        , LiteralExpression _ (IntegerLiteral 0)
+                        ])
+                    , LiteralExpression _
+                      (ListLiteral
+                        [ LiteralExpression _ (IntegerLiteral 0)
+                        , LiteralExpression _ (IntegerLiteral 1)
+                        ])
+                    ]))
+              ]) -> True
+            _ -> False
+
+          -- Parentheses are required to differentiate map and set literals from
+          -- block statements.
+
+        specify "null map/set" do
+          parseTest "({});" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _ (LiteralExpression _ (SetLiteral [])))
+              ]) -> True
+            _ -> False
+
+        specify "null map/set (trailing comma)" do
+          parseTest "({,});" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _ (LiteralExpression _ (SetLiteral [])))
+              ]) -> True
+            _ -> False
+
+        specify "singleton set" do
+          parseTest "({1});" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _
+                    (SetLiteral
                       [ LiteralExpression _ (IntegerLiteral 1)
-                      , LiteralExpression _ (IntegerLiteral 0)
-                      ])
-                  , LiteralExpression _
-                    (ListLiteral
-                      [ LiteralExpression _ (IntegerLiteral 0)
-                      , LiteralExpression _ (IntegerLiteral 1)
-                      ])
-                  ]))
-            ]) -> True
-          _ -> False
+                      ])))
+              ]) -> True
+            _ -> False
 
-        -- Parentheses are required to differentiate map and set literals from
-        -- block statements.
+        specify "singleton set (trailing comma)" do
+          parseTest "({1,});" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _
+                    (SetLiteral
+                      [ LiteralExpression _ (IntegerLiteral 1)
+                      ])))
+              ]) -> True
+            _ -> False
 
-        parseTest "({});" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _ (LiteralExpression _ (SetLiteral [])))
-            ]) -> True
-          _ -> False
+        specify "singleton map" do
+          parseTest "({unquoted_key:value});" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _
+                    (MapLiteral
+                      [ (,)
+                        (LiteralExpression _ (TextLiteral "unquoted_key"))
+                        (IdentifierExpression _ "value")
+                      ])))
+              ]) -> True
+            _ -> False
 
-        parseTest "({,});" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _ (LiteralExpression _ (SetLiteral [])))
-            ]) -> True
-          _ -> False
+        specify "singleton map (space)" do
+          parseTest "({ unquoted_key: value });" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _
+                    (MapLiteral
+                      [ (,)
+                        (LiteralExpression _ (TextLiteral "unquoted_key"))
+                        (IdentifierExpression _ "value")
+                      ])))
+              ]) -> True
+            _ -> False
 
-        parseTest "({1});" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _
-                  (SetLiteral
-                    [ LiteralExpression _ (IntegerLiteral 1)
-                    ])))
-            ]) -> True
-          _ -> False
+        specify "singleton map (quotes)" do
+          parseTest "({ \"quoted_key\": value });" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _
+                    (MapLiteral
+                      [ (,)
+                        (LiteralExpression _ (TextLiteral "quoted_key"))
+                        (IdentifierExpression _ "value")
+                      ])))
+              ]) -> True
+            _ -> False
 
-        parseTest "({1,});" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _
-                  (SetLiteral
-                    [ LiteralExpression _ (IntegerLiteral 1)
-                    ])))
-            ]) -> True
-          _ -> False
+        specify "map" do
+          parseTest "({ key1: value1, key2: value2 });"
+            \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _
+                    (MapLiteral
+                      [ (,)
+                        (LiteralExpression _ (TextLiteral "key1"))
+                        (IdentifierExpression _ "value1")
+                      , (,)
+                        (LiteralExpression _ (TextLiteral "key2"))
+                        (IdentifierExpression _ "value2")
+                      ])))
+              ]) -> True
+            _ -> False
 
-        parseTest "({unquoted_key:value});" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _
-                  (MapLiteral
-                    [ (,)
-                      (LiteralExpression _ (TextLiteral "unquoted_key"))
-                      (IdentifierExpression _ "value")
-                    ])))
-            ]) -> True
-          _ -> False
+        specify "map (quotes)" do
+          parseTest "({ \"key1\": value1, key2: value2 });"
+            \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _
+                    (MapLiteral
+                      [ (,)
+                        (LiteralExpression _ (TextLiteral "key1"))
+                        (IdentifierExpression _ "value1")
+                      , (,)
+                        (LiteralExpression _ (TextLiteral "key2"))
+                        (IdentifierExpression _ "value2")
+                      ])))
+              ]) -> True
+            _ -> False
 
-        parseTest "({ unquoted_key: value });" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _
-                  (MapLiteral
-                    [ (,)
-                      (LiteralExpression _ (TextLiteral "unquoted_key"))
-                      (IdentifierExpression _ "value")
-                    ])))
-            ]) -> True
-          _ -> False
+        specify "map (expression)" do
+          parseTest "({ (expr_key): value });"
+            \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (GroupExpression _
+                  (LiteralExpression _
+                    (MapLiteral
+                      [ (,)
+                        -- Note that this is not wrapped in a group expression,
+                        -- because bare keys are parsed as text literals, not
+                        -- identifiers.
+                        (IdentifierExpression _ "expr_key")
+                        (IdentifierExpression _ "value")
+                      ])))
+              ]) -> True
+            _ -> False
 
-        parseTest "({ \"quoted_key\": value });" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _
-                  (MapLiteral
-                    [ (,)
-                      (LiteralExpression _ (TextLiteral "quoted_key"))
-                      (IdentifierExpression _ "value")
-                    ])))
-            ]) -> True
-          _ -> False
+      describe "expression suffixes" do
 
-        parseTest "({ key1: value1, key2: value2 });"
-          \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _
-                  (MapLiteral
-                    [ (,)
-                      (LiteralExpression _ (TextLiteral "key1"))
-                      (IdentifierExpression _ "value1")
-                    , (,)
-                      (LiteralExpression _ (TextLiteral "key2"))
-                      (IdentifierExpression _ "value2")
-                    ])))
-            ]) -> True
-          _ -> False
-
-        parseTest "({ \"key1\": value1, key2: value2 });"
-          \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _
-                  (MapLiteral
-                    [ (,)
-                      (LiteralExpression _ (TextLiteral "key1"))
-                      (IdentifierExpression _ "value1")
-                    , (,)
-                      (LiteralExpression _ (TextLiteral "key2"))
-                      (IdentifierExpression _ "value2")
-                    ])))
-            ]) -> True
-          _ -> False
-
-        parseTest "({ (expr_key): value });"
-          \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (GroupExpression _
-                (LiteralExpression _
-                  (MapLiteral
-                    [ (,)
-                      -- Note that this is not wrapped in a group expression,
-                      -- because bare keys are parsed as text literals, not
-                      -- identifiers.
-                      (IdentifierExpression _ "expr_key")
-                      (IdentifierExpression _ "value")
-                    ])))
-            ]) -> True
-          _ -> False
-
-      specify "expression suffixes" do
-
-        parseTest "[1, 2][0];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (SubscriptExpression _
-                (LiteralExpression _
-                  (ListLiteral
-                    [ LiteralExpression _ (IntegerLiteral 1)
-                    , LiteralExpression _ (IntegerLiteral 2)
-                    ]))
-                [LiteralExpression _ (IntegerLiteral 0)])
-            ]) -> True
-          _ -> False
-
-        parseTest "[1, 2][0, 1];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (SubscriptExpression _
-                (LiteralExpression _
-                  (ListLiteral
-                    [ LiteralExpression _ (IntegerLiteral 1)
-                    , LiteralExpression _ (IntegerLiteral 2)
-                    ]))
-                [ LiteralExpression _ (IntegerLiteral 0)
-                , LiteralExpression _ (IntegerLiteral 1)
-                ])
-            ]) -> True
-          _ -> False
-
-        parseTest "[[1, 2]][0][1];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (SubscriptExpression _
+        specify "subscript" do
+          parseTest "[1, 2][0];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
                 (SubscriptExpression _
                   (LiteralExpression _
                     (ListLiteral
-                      [ (LiteralExpression _
-                        (ListLiteral
-                          [ LiteralExpression _ (IntegerLiteral 1)
-                          , LiteralExpression _ (IntegerLiteral 2)
-                          ]))
+                      [ LiteralExpression _ (IntegerLiteral 1)
+                      , LiteralExpression _ (IntegerLiteral 2)
                       ]))
                   [LiteralExpression _ (IntegerLiteral 0)])
-                [LiteralExpression _ (IntegerLiteral 1)])
-            ]) -> True
-          _ -> False
+              ]) -> True
+            _ -> False
 
-        parseTest "foo.bar;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (DotExpression _
-                (IdentifierExpression _ "foo")
-                "bar")
-            ]) -> True
-          _ -> False
-
-        parseTest "foo.bar();" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (CallExpression _
-                (DotExpression _
-                  (IdentifierExpression _ "foo")
-                  "bar")
-                [])
-            ]) -> True
-          _ -> False
-
-        parseTest "foo.bar(baz);" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (CallExpression _
-                (DotExpression _
-                  (IdentifierExpression _ "foo")
-                  "bar")
-                [ IdentifierExpression _ "baz"
-                ])
-            ]) -> True
-          _ -> False
-
-        parseTest "foo.bar(baz, quux);" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (CallExpression _
-                (DotExpression _
-                  (IdentifierExpression _ "foo")
-                  "bar")
-                [ IdentifierExpression _ "baz"
-                , IdentifierExpression _ "quux"
-                ])
-            ]) -> True
-          _ -> False
-
-        parseTest "foo.bar[0](\"baz\");" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (CallExpression _
+        specify "multidimensional subscript" do
+          parseTest "[1, 2][0, 1];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
                 (SubscriptExpression _
+                  (LiteralExpression _
+                    (ListLiteral
+                      [ LiteralExpression _ (IntegerLiteral 1)
+                      , LiteralExpression _ (IntegerLiteral 2)
+                      ]))
+                  [ LiteralExpression _ (IntegerLiteral 0)
+                  , LiteralExpression _ (IntegerLiteral 1)
+                  ])
+              ]) -> True
+            _ -> False
+
+        specify "multiple subscripts" do
+          parseTest "[[1, 2]][0][1];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (SubscriptExpression _
+                  (SubscriptExpression _
+                    (LiteralExpression _
+                      (ListLiteral
+                        [ (LiteralExpression _
+                          (ListLiteral
+                            [ LiteralExpression _ (IntegerLiteral 1)
+                            , LiteralExpression _ (IntegerLiteral 2)
+                            ]))
+                        ]))
+                    [LiteralExpression _ (IntegerLiteral 0)])
+                  [LiteralExpression _ (IntegerLiteral 1)])
+              ]) -> True
+            _ -> False
+
+        specify "dot" do
+          parseTest "foo.bar;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (DotExpression _
+                  (IdentifierExpression _ "foo")
+                  "bar")
+              ]) -> True
+            _ -> False
+
+        specify "dot call (0 arguments)" do
+          parseTest "foo.bar();" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
                   (DotExpression _
                     (IdentifierExpression _ "foo")
                     "bar")
-                  [ LiteralExpression _ (IntegerLiteral 0)
+                  [])
+              ]) -> True
+            _ -> False
+
+        specify "dot call (1 argument)" do
+          parseTest "foo.bar(baz);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
+                  (DotExpression _
+                    (IdentifierExpression _ "foo")
+                    "bar")
+                  [ IdentifierExpression _ "baz"
                   ])
-                [LiteralExpression _ (TextLiteral "baz")])
-            ]) -> True
-          _ -> False
+              ]) -> True
+            _ -> False
 
-      specify "operators" do
+        specify "dot call (multiple arguments)" do
+          parseTest "foo.bar(baz, quux);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
+                  (DotExpression _
+                    (IdentifierExpression _ "foo")
+                    "bar")
+                  [ IdentifierExpression _ "baz"
+                  , IdentifierExpression _ "quux"
+                  ])
+              ]) -> True
+            _ -> False
 
-        parseTest "-1;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (UnaryExpression _ UnaryMinus
-                (LiteralExpression _ (IntegerLiteral 1)))
-            ]) -> True
-          _ -> False
+        specify "call after subscript" do
+          parseTest "foo.bar[0](\"baz\");" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
+                  (SubscriptExpression _
+                    (DotExpression _
+                      (IdentifierExpression _ "foo")
+                      "bar")
+                    [ LiteralExpression _ (IntegerLiteral 0)
+                    ])
+                  [LiteralExpression _ (TextLiteral "baz")])
+              ]) -> True
+            _ -> False
 
-        parseTest "+1;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (UnaryExpression _ UnaryPlus
-                (LiteralExpression _ (IntegerLiteral 1)))
-            ]) -> True
-          _ -> False
+      describe "operators" do
 
-        parseTest "-x;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (UnaryExpression _ UnaryMinus
-                (IdentifierExpression _ "x"))
-            ]) -> True
-          _ -> False
+        specify "negate integer" do
+          parseTest "-1;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (UnaryExpression _ UnaryMinus
+                  (LiteralExpression _ (IntegerLiteral 1)))
+              ]) -> True
+            _ -> False
 
-        parseTest "each xs;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (UnaryExpression _ UnaryEach
-                (IdentifierExpression _ "xs"))
-            ]) -> True
-          _ -> False
+        specify "identity integer" do
+          parseTest "+1;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (UnaryExpression _ UnaryPlus
+                  (LiteralExpression _ (IntegerLiteral 1)))
+              ]) -> True
+            _ -> False
 
-        parseTest "every xs;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (UnaryExpression _ UnaryEvery
-                (IdentifierExpression _ "xs"))
-            ]) -> True
-          _ -> False
+        specify "negate variable" do
+          parseTest "-x;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (UnaryExpression _ UnaryMinus
+                  (IdentifierExpression _ "x"))
+              ]) -> True
+            _ -> False
 
-        parseTest "not true;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (UnaryExpression _ UnaryNot
-                (LiteralExpression _ (BooleanLiteral True)))
-            ]) -> True
-          _ -> False
+        specify "each variable" do
+          parseTest "each xs;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (UnaryExpression _ UnaryEach
+                  (IdentifierExpression _ "xs"))
+              ]) -> True
+            _ -> False
+
+        specify "every variable" do
+          parseTest "every xs;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (UnaryExpression _ UnaryEvery
+                  (IdentifierExpression _ "xs"))
+              ]) -> True
+            _ -> False
+
+        specify "not boolean" do
+          parseTest "not true;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (UnaryExpression _ UnaryNot
+                  (LiteralExpression _ (BooleanLiteral True)))
+              ]) -> True
+            _ -> False
 
         -- Identifier with keyword prefix shouldn't treat keyword as operator.
 
-        parseTest "eachxs;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (IdentifierExpression _ "eachxs")
-            ]) -> True
-          _ -> False
+        specify "name whose first part begins with 'each'" do
+          parseTest "eachxs;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "eachxs")
+              ]) -> True
+            _ -> False
 
-        parseTest "everyxs;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (IdentifierExpression _ "everyxs")
-            ]) -> True
-          _ -> False
+        specify "name whose first part begins with 'every'" do
+          parseTest "everyxs;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "everyxs")
+              ]) -> True
+            _ -> False
 
-        parseTest "nottrue;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (IdentifierExpression _ "nottrue")
-            ]) -> True
-          _ -> False
+        specify "name whose first part begins with 'not'" do
+          parseTest "nottrue;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "nottrue")
+              ]) -> True
+            _ -> False
 
-        parseTest "2 + 3;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryAdd
-                (LiteralExpression _ (IntegerLiteral 2))
-                (LiteralExpression _ (IntegerLiteral 3)))
-            ]) -> True
-          _ -> False
-
-        parseTest "2+3;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryAdd
-                (LiteralExpression _ (IntegerLiteral 2))
-                (LiteralExpression _ (IntegerLiteral 3)))
-            ]) -> True
-          _ -> False
-
-        -- Multi-token operators should not cause ambiguity.
-
-        parseTest "2 is in [1, 2];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryElement
-                (LiteralExpression _ (IntegerLiteral 2))
-                (LiteralExpression _
-                  (ListLiteral
-                    [ LiteralExpression _ (IntegerLiteral 1)
-                    , LiteralExpression _ (IntegerLiteral 2)
-                    ])))
-            ]) -> True
-          _ -> False
-
-        parseTest "3 is not in [1, 2];" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryNotElement
-                (LiteralExpression _ (IntegerLiteral 3))
-                (LiteralExpression _
-                  (ListLiteral
-                    [ LiteralExpression _ (IntegerLiteral 1)
-                    , LiteralExpression _ (IntegerLiteral 2)
-                    ])))
-            ]) -> True
-          _ -> False
-
-        -- Associativity should be correct for all operators.
-
-        parseTest "2 + 3 + 5;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryAdd
+        specify "addition" do
+          parseTest "2 + 3;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
                 (BinaryExpression _ BinaryAdd
                   (LiteralExpression _ (IntegerLiteral 2))
                   (LiteralExpression _ (IntegerLiteral 3)))
-                (LiteralExpression _ (IntegerLiteral 5)))
-            ]) -> True
-          _ -> False
+              ]) -> True
+            _ -> False
 
-        parseTest "2 * 3 * 5;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryMultiply
-                (BinaryExpression _ BinaryMultiply
+        specify "addition (no space)" do
+          parseTest "2+3;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryAdd
                   (LiteralExpression _ (IntegerLiteral 2))
                   (LiteralExpression _ (IntegerLiteral 3)))
-                (LiteralExpression _ (IntegerLiteral 5)))
-            ]) -> True
-          _ -> False
+              ]) -> True
+            _ -> False
+
+        -- Multi-token operators should not cause ambiguity.
+
+        specify "multi-word operator 'is in'" do
+          parseTest "2 is in [1, 2];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryElement
+                  (LiteralExpression _ (IntegerLiteral 2))
+                  (LiteralExpression _
+                    (ListLiteral
+                      [ LiteralExpression _ (IntegerLiteral 1)
+                      , LiteralExpression _ (IntegerLiteral 2)
+                      ])))
+              ]) -> True
+            _ -> False
+
+        specify "multi-word operator 'is not in'" do
+          parseTest "3 is not in [1, 2];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryNotElement
+                  (LiteralExpression _ (IntegerLiteral 3))
+                  (LiteralExpression _
+                    (ListLiteral
+                      [ LiteralExpression _ (IntegerLiteral 1)
+                      , LiteralExpression _ (IntegerLiteral 2)
+                      ])))
+              ]) -> True
+            _ -> False
+
+        -- Associativity should be correct for all operators.
+
+        specify "addition associativity" do
+          parseTest "2 + 3 + 5;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryAdd
+                  (BinaryExpression _ BinaryAdd
+                    (LiteralExpression _ (IntegerLiteral 2))
+                    (LiteralExpression _ (IntegerLiteral 3)))
+                  (LiteralExpression _ (IntegerLiteral 5)))
+              ]) -> True
+            _ -> False
+
+        specify "multiplication associativity" do
+          parseTest "2 * 3 * 5;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryMultiply
+                  (BinaryExpression _ BinaryMultiply
+                    (LiteralExpression _ (IntegerLiteral 2))
+                    (LiteralExpression _ (IntegerLiteral 3)))
+                  (LiteralExpression _ (IntegerLiteral 5)))
+              ]) -> True
+            _ -> False
 
         -- Relative operator precedence should be preserved and overridden with
         -- parentheses, which also introduce group expressions.
 
-        parseTest "2 * 3 + 5;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryAdd
-                (BinaryExpression _ BinaryMultiply
-                  (LiteralExpression _ (IntegerLiteral 2))
-                  (LiteralExpression _ (IntegerLiteral 3)))
-                (LiteralExpression _ (IntegerLiteral 5)))
-            ]) -> True
-          _ -> False
-
-        parseTest "(2 * 3) + 5;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryAdd
-                (GroupExpression _
+        specify "precedence multiplication > addition" do
+          parseTest "2 * 3 + 5;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryAdd
                   (BinaryExpression _ BinaryMultiply
                     (LiteralExpression _ (IntegerLiteral 2))
-                    (LiteralExpression _ (IntegerLiteral 3))))
-                (LiteralExpression _ (IntegerLiteral 5)))
-            ]) -> True
-          _ -> False
+                    (LiteralExpression _ (IntegerLiteral 3)))
+                  (LiteralExpression _ (IntegerLiteral 5)))
+              ]) -> True
+            _ -> False
 
-        parseTest "2 * (3 + 5);" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryMultiply
-                (LiteralExpression _ (IntegerLiteral 2))
-                (GroupExpression _
-                  (BinaryExpression _ BinaryAdd
-                    (LiteralExpression _ (IntegerLiteral 3))
-                    (LiteralExpression _ (IntegerLiteral 5)))))
-            ]) -> True
-          _ -> False
-
-        parseTest "x mod 2 * 3;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryMultiply
-                (BinaryExpression _ BinaryModulus
-                  (IdentifierExpression _ "x")
-                  (LiteralExpression _ (IntegerLiteral 2)))
-                (LiteralExpression _ (IntegerLiteral 3)))
-            ]) -> True
-          _ -> False
-
-        parseTest "x + y < z * w;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryLess
+        specify "precedence redundant grouping" do
+          parseTest "(2 * 3) + 5;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
                 (BinaryExpression _ BinaryAdd
-                  (IdentifierExpression _ "x")
-                  (IdentifierExpression _ "y"))
+                  (GroupExpression _
+                    (BinaryExpression _ BinaryMultiply
+                      (LiteralExpression _ (IntegerLiteral 2))
+                      (LiteralExpression _ (IntegerLiteral 3))))
+                  (LiteralExpression _ (IntegerLiteral 5)))
+              ]) -> True
+            _ -> False
+
+        specify "precedence required grouping" do
+          parseTest "2 * (3 + 5);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
                 (BinaryExpression _ BinaryMultiply
-                  (IdentifierExpression _ "z")
-                  (IdentifierExpression _ "w")))
-            ]) -> True
-          _ -> False
+                  (LiteralExpression _ (IntegerLiteral 2))
+                  (GroupExpression _
+                    (BinaryExpression _ BinaryAdd
+                      (LiteralExpression _ (IntegerLiteral 3))
+                      (LiteralExpression _ (IntegerLiteral 5)))))
+              ]) -> True
+            _ -> False
+
+        specify "modulus and multiplication left-associative" do
+          parseTest "x mod 2 * 3;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryMultiply
+                  (BinaryExpression _ BinaryModulus
+                    (IdentifierExpression _ "x")
+                    (LiteralExpression _ (IntegerLiteral 2)))
+                  (LiteralExpression _ (IntegerLiteral 3)))
+              ]) -> True
+            _ -> False
+
+        specify "relational lower precedence than arithmetic" do
+          parseTest "x + y < z * w;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryLess
+                  (BinaryExpression _ BinaryAdd
+                    (IdentifierExpression _ "x")
+                    (IdentifierExpression _ "y"))
+                  (BinaryExpression _ BinaryMultiply
+                    (IdentifierExpression _ "z")
+                    (IdentifierExpression _ "w")))
+              ]) -> True
+            _ -> False
 
         -- See note [Compound Comparisons].
-        parseTest "x < y < z;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryLess
+        specify "chained relations" do
+          parseTest "x < y < z;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
                 (BinaryExpression _ BinaryLess
-                  (IdentifierExpression _ "x")
-                  (IdentifierExpression _ "y"))
-                (IdentifierExpression _ "z"))
-            ]) -> True
-          _ -> False
+                  (BinaryExpression _ BinaryLess
+                    (IdentifierExpression _ "x")
+                    (IdentifierExpression _ "y"))
+                  (IdentifierExpression _ "z"))
+              ]) -> True
+            _ -> False
 
-        parseTest "a and not b implies not c or d;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (BinaryExpression _ BinaryImplies
-                (BinaryExpression _ BinaryAnd
-                  (IdentifierExpression _ "a")
-                  (UnaryExpression _ UnaryNot
-                    (IdentifierExpression _ "b")))
-                (BinaryExpression _ BinaryOr
-                  (UnaryExpression _ UnaryNot
-                    (IdentifierExpression _ "c"))
-                  (IdentifierExpression _ "d")))
-            ]) -> True
-          _ -> False
+        specify "logical operators" do
+          parseTest "a and not b implies not c or d;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (BinaryExpression _ BinaryImplies
+                  (BinaryExpression _ BinaryAnd
+                    (IdentifierExpression _ "a")
+                    (UnaryExpression _ UnaryNot
+                      (IdentifierExpression _ "b")))
+                  (BinaryExpression _ BinaryOr
+                    (UnaryExpression _ UnaryNot
+                      (IdentifierExpression _ "c"))
+                    (IdentifierExpression _ "d")))
+              ]) -> True
+            _ -> False
 
       specify "'if' expressions" do
 
@@ -1431,7 +1518,7 @@ spec = do
          \beep\n\
          \\&")
 
-parseTest :: String -> (Either ParseError Program -> Bool) -> IO ()
+parseTest :: String -> (Either ParseError (Program SourceSpan) -> Bool) -> IO ()
 parseTest source successful = do
   let result = parseProgram "test" source
   assertBool (concat [show source, " => ", show result]) $ successful result

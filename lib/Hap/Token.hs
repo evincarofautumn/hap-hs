@@ -1,25 +1,81 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Hap.Token where
 
-import Hap.Data.Monoid (Maximum(..), Minimum(..))
 import Data.Text (Text)
+import Data.Text.Prettyprint.Doc (Pretty(..))
+import Hap.Data.Monoid (Maximum(..), Minimum(..))
+import qualified Data.Text.Prettyprint.Doc as Pretty
 
 newtype Offset = Offset { getOffset :: Int }
   deriving stock (Eq, Ord, Show)
 
-newtype Line = Line { getLine :: Int }
+newtype Row = Row { getRow :: Int }
   deriving stock (Eq, Ord, Show)
+
+instance Pretty Row where
+  pretty = pretty . getRow
 
 newtype Column = Column { getColumn :: Int }
   deriving stock (Eq, Ord, Show)
 
+instance Pretty Column where
+  pretty = pretty . getColumn
+
 -- TODO: Add "begin" and "end" positions? Would allow 'Monoid'.
-data SourcePosition = SourcePosition !Offset !Line !Column
+data SourcePosition = SourcePosition !Offset !Row !Column
   deriving stock (Eq, Ord, Show)
+
+instance Pretty SourcePosition where
+  pretty (SourcePosition _ row column) = Pretty.hcat
+    [ pretty row
+    , "."
+    , pretty column
+    ]
 
 newtype SourceSpan = SourceSpan (Maybe SourcePosition, Maybe SourcePosition)
   deriving stock (Show)
   deriving (Monoid, Semigroup)
     via (Minimum SourcePosition, Maximum SourcePosition)
+
+instance Pretty SourceSpan where
+  pretty (SourceSpan range) = case range of
+    (Nothing,    Nothing)  -> "?"
+    (Just start, Nothing)  -> pretty start <> "-?"
+    (Nothing,    Just end) -> "?-" <> pretty end
+    (Just start, Just end) -> prettyPositionSpan start end
+    where
+      prettyPositionSpan
+        (SourcePosition _ startRow startColumn)
+        (SourcePosition _ endRow endColumn)
+        | startRow == endRow = if startColumn == endColumn
+
+          -- row.column
+          then Pretty.hcat
+            [ pretty startRow
+            , "."
+            , pretty startColumn
+            ]
+
+          -- row.column1-column2
+          else Pretty.hcat
+            [ pretty startRow
+            , "."
+            , pretty startColumn
+            , "-"
+            , pretty endColumn
+            ]
+
+        -- row1.column1-row2.column2
+        | otherwise = Pretty.hcat
+          [ pretty startRow
+          , "."
+          , pretty startColumn
+          , "-"
+          , pretty endRow
+          , "."
+          , pretty endColumn
+          ]
 
 data Token anno
 
@@ -127,6 +183,43 @@ data Token anno
 
   deriving stock (Eq, Show)
 
+instance Pretty (Token anno) where
+  pretty = \ case
+    WordToken (_, word)       -> pretty word
+    KeywordToken (_, keyword) -> pretty keyword
+    DigitsToken (_, value)    -> pretty value
+    LeftParenthesisToken{}    -> "("
+    RightParenthesisToken{}   -> ")"
+    BangToken{}               -> "!"
+    NumberToken{}             -> "#"
+    PercentToken{}            -> "%"
+    AndToken{}                -> "&"
+    StarToken{}               -> "*"
+    PlusToken{}               -> "+"
+    CommaToken{}              -> ","
+    MinusToken{}              -> "-"
+    DotToken{}                -> "."
+    SlashToken{}              -> "/"
+    ColonToken{}              -> ":"
+    SemicolonToken{}          -> ";"
+    LessThanToken{}           -> "<"
+    LessThanOrEqualToken{}    -> "<="
+    NotEqualToken{}           -> "<>"
+    EqualToken{}              -> "="
+    GreaterThanToken{}        -> ">"
+    GreaterThanOrEqualToken{} -> ">="
+    QuestionToken{}           -> "?"
+    AtToken{}                 -> "@"
+    LeftSquareBracketToken{}  -> "["
+    BackslashToken{}          -> "\\"
+    RightSquareBracketToken{} -> "]"
+    CaretToken{}              -> "^"
+    LeftCurlyBraceToken{}     -> "{"
+    PipeToken{}               -> "|"
+    RightCurlyBraceToken{}    -> "}"
+    TildeToken{}              -> "~"
+    EofToken                  -> "<end of file>"
+
 data Keyword
   = AddKeyword
   | AfterKeyword
@@ -140,6 +233,7 @@ data Keyword
   | ElseKeyword
   | EntityKeyword
   | EveryKeyword
+  | FalseKeyword
   | ForKeyword
   | FunctionKeyword
   | HasKeyword
@@ -153,6 +247,7 @@ data Keyword
   | RemoveKeyword
   | ReturnKeyword
   | SetKeyword
+  | TrueKeyword
   | UntilKeyword
   | VarKeyword
   | WhenKeyword
@@ -161,6 +256,43 @@ data Keyword
   | WhichKeyword
   | WhileKeyword
   deriving stock (Eq, Show)
+
+instance Pretty Keyword where
+  pretty = \ case
+    AddKeyword      -> "add"
+    AfterKeyword    -> "after"
+    AllKeyword      -> "all"
+    AsKeyword       -> "as"
+    AsyncKeyword    -> "async"
+    AtomicKeyword   -> "atomic"
+    BeforeKeyword   -> "before"
+    ChangeKeyword   -> "change"
+    EachKeyword     -> "each"
+    ElseKeyword     -> "else"
+    EntityKeyword   -> "entity"
+    EveryKeyword    -> "every"
+    FalseKeyword    -> "false"
+    ForKeyword      -> "for"
+    FunctionKeyword -> "function"
+    HasKeyword      -> "has"
+    IfKeyword       -> "if"
+    LastKeyword     -> "last"
+    LongKeyword     -> "long"
+    NeedsKeyword    -> "needs"
+    NextKeyword     -> "next"
+    OnKeyword       -> "on"
+    RedoKeyword     -> "redo"
+    RemoveKeyword   -> "remove"
+    ReturnKeyword   -> "return"
+    SetKeyword      -> "set"
+    TrueKeyword     -> "true"
+    UntilKeyword    -> "until"
+    VarKeyword      -> "var"
+    WhenKeyword     -> "when"
+    WheneverKeyword -> "whenever"
+    WhereKeyword    -> "where"
+    WhichKeyword    -> "which"
+    WhileKeyword    -> "while"
 
 tokenAnno :: Token anno -> anno
 tokenAnno = \ case

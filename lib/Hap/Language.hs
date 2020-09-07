@@ -17,7 +17,6 @@ module Hap.Language
   , nativeFunction
   , nativeId
   , nativeName
-  , parseProgram
   , statementAnno
   ) where
 
@@ -288,6 +287,7 @@ instance IsString Identifier where
 -- Parsing
 --------------------------------------------------------------------------------
 
+{-
 parseProgram :: FilePath -> String -> Either ParseError (Program SourcePos)
 parseProgram path source = Parsec.parse programParser path source
   where
@@ -730,6 +730,7 @@ parseProgram path source = Parsec.parse programParser path source
 
     applySuffixes :: [a -> a] -> a -> a
     applySuffixes = foldl' (flip (.)) id
+-}
 
 -- Note [Empty Container Literal Comma]:
 --

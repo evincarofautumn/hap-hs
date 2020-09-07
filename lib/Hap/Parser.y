@@ -16,10 +16,12 @@ import qualified Data.Text as Text
 
 }
 
-%name parser
+%name programParser Program
+%name tokensParser Tokens
 %tokentype { Token SourceSpan }
 %monad { Parser } { thenP } { returnP }
 %lexer { happyTokenizer } { EofToken }
+%error { errorP }
 
 %token
 
@@ -27,6 +29,7 @@ import qualified Data.Text as Text
 -- Primitive Tokens
 --------------------------------------------------------------------------------
 
+  token    { $$ }
   word     { WordToken   $$ }
   integer  { DigitsToken $$ }
 
@@ -81,6 +84,7 @@ import qualified Data.Text as Text
   elseKeyword     { KeywordToken (_, ElseKeyword)     }
   entityKeyword   { KeywordToken (_, EntityKeyword)   }
   everyKeyword    { KeywordToken (_, EveryKeyword)    }
+  falseKeyword    { KeywordToken (_, FalseKeyword)    }
   forKeyword      { KeywordToken (_, ForKeyword)      }
   functionKeyword { KeywordToken (_, FunctionKeyword) }
   hasKeyword      { KeywordToken (_, HasKeyword)      }
@@ -94,6 +98,7 @@ import qualified Data.Text as Text
   removeKeyword   { KeywordToken (_, RemoveKeyword)   }
   returnKeyword   { KeywordToken (_, ReturnKeyword)   }
   setKeyword      { KeywordToken (_, SetKeyword)      }
+  trueKeyword     { KeywordToken (_, TrueKeyword)      }
   untilKeyword    { KeywordToken (_, UntilKeyword)    }
   varKeyword      { KeywordToken (_, VarKeyword)      }
   whenKeyword     { KeywordToken (_, WhenKeyword)     }
@@ -115,16 +120,20 @@ import qualified Data.Text as Text
 -- Grammar
 --------------------------------------------------------------------------------
 
--- Entry point.
+-- Parse just a list of tokens, for debugging.
+Tokens :: { [Token SourceSpan] }
+  : many(token) { $1 }
+
+-- Main entry point.
 Program :: { Program SourceSpan }
   : many(Statement) { Program $1 }
 
 Statement :: { Statement SourceSpan }
-  : atomicKeyword Statement { atomicStatement $1 $2 }
-  | IfStatement             { $1 }
-  | '{' many(Statement) '}' { blockStatement $1 $2 $3 }
-  | Expression ';'          { expressionStatement $1 $2 }
-  | ';'                     { emptyStatement $1 }
+  -- : atomicKeyword Statement { atomicStatement $1 $2 }
+  -- | IfStatement             { $1 }
+  -- | '{' many(Statement) '}' { blockStatement $1 $2 $3 }
+  -- | Expression ';'          { expressionStatement $1 $2 }
+  : ';'                     { emptyStatement $1 }
 
 IfStatement :: { Statement SourceSpan }
   : ifKeyword '(' Expression ')' Statement
@@ -138,8 +147,13 @@ ElseClause :: { (SourceSpan, Statement SourceSpan) }
 
 Expression :: { Expression SourceSpan }
   : integer            { integerExpression $1 }
+  | Boolean            { booleanExpression $1 }
   | '(' Expression ')' { groupExpression $1 $2 $3 }
   | Identifier         { identifierExpression $1 }
+
+Boolean :: { (SourceSpan, Bool) }
+  : trueKeyword  { (tokenAnno $1, True) }
+  | falseKeyword { (tokenAnno $1, False) }
 
 Identifier :: { (SourceSpan, Identifier) }
   : IdentifierStart many(IdentifierContinue) { identifierParts $1 $2 }
@@ -170,6 +184,7 @@ ContextualWord :: { (SourceSpan, Text) }
   | elseWord     { $1 }
   | entityWord   { $1 }
   | everyWord    { $1 }
+  | falseWord    { $1 }
   | forWord      { $1 }
   | functionWord { $1 }
   | hasWord      { $1 }
@@ -183,6 +198,7 @@ ContextualWord :: { (SourceSpan, Text) }
   | removeWord   { $1 }
   | returnWord   { $1 }
   | setWord      { $1 }
+  | trueWord     { $1 }
   | untilWord    { $1 }
   | varWord      { $1 }
   | whenWord     { $1 }
@@ -203,6 +219,7 @@ eachWord     : eachKeyword     { (tokenAnno $1, "each")     }
 elseWord     : elseKeyword     { (tokenAnno $1, "else")     }
 entityWord   : entityKeyword   { (tokenAnno $1, "entity")   }
 everyWord    : everyKeyword    { (tokenAnno $1, "every")    }
+falseWord    : falseKeyword    { (tokenAnno $1, "false")    }
 forWord      : forKeyword      { (tokenAnno $1, "for")      }
 functionWord : functionKeyword { (tokenAnno $1, "function") }
 hasWord      : hasKeyword      { (tokenAnno $1, "has")      }
@@ -216,6 +233,7 @@ redoWord     : redoKeyword     { (tokenAnno $1, "redo")     }
 removeWord   : removeKeyword   { (tokenAnno $1, "remove")   }
 returnWord   : returnKeyword   { (tokenAnno $1, "return")   }
 setWord      : setKeyword      { (tokenAnno $1, "set")      }
+trueWord     : trueKeyword     { (tokenAnno $1, "true")     }
 untilWord    : untilKeyword    { (tokenAnno $1, "until")    }
 varWord      : varKeyword      { (tokenAnno $1, "var")      }
 whenWord     : whenKeyword     { (tokenAnno $1, "when")     }
@@ -257,7 +275,10 @@ someR(p)  -- :: { Parser a -> Parser (NonEmpty a) }
 -- Statement
 --------------------------------------------------------------------------------
 
-atomicStatement :: _
+atomicStatement
+  :: Token SourceSpan
+  -> Statement SourceSpan
+  -> Statement SourceSpan
 atomicStatement atomicKeyword body = AtomicStatement pos body
   where
     pos = mconcat
@@ -265,7 +286,11 @@ atomicStatement atomicKeyword body = AtomicStatement pos body
       , statementAnno body
       ]
 
-blockStatement :: _
+blockStatement
+  :: Token SourceSpan
+  -> [Statement SourceSpan]
+  -> Token SourceSpan
+  -> Statement SourceSpan
 blockStatement openBrace statements closeBrace = BlockStatement pos statements
   where
     pos = mconcat $ concat
@@ -274,7 +299,10 @@ blockStatement openBrace statements closeBrace = BlockStatement pos statements
       , [tokenAnno closeBrace]
       ]
 
-expressionStatement :: _
+expressionStatement
+  :: Expression SourceSpan
+  -> Token SourceSpan
+  -> Statement SourceSpan
 expressionStatement body semicolon = ExpressionStatement pos body
   where
     pos = mconcat
@@ -282,16 +310,18 @@ expressionStatement body semicolon = ExpressionStatement pos body
       , tokenAnno semicolon
       ]
 
-emptyStatement :: _
+emptyStatement
+  :: Token SourceSpan
+  -> Statement SourceSpan
 emptyStatement semicolon = EmptyStatement pos
   where
     pos = tokenAnno semicolon
 
 ifStatement
-  :: _
-  -> _
+  :: Token SourceSpan
+  -> Token SourceSpan
   -> Expression SourceSpan
-  -> _
+  -> Token SourceSpan
   -> Statement SourceSpan
   -> Maybe (SourceSpan, Statement SourceSpan)
   -> Statement SourceSpan
@@ -310,7 +340,7 @@ ifStatement ifKeyword
       ]
 
 elseClause
-  :: _
+  :: Token SourceSpan
   -> Statement SourceSpan
   -> (SourceSpan, Statement SourceSpan)
 elseClause elseKeyword body = (pos, body)
@@ -325,9 +355,9 @@ elseClause elseKeyword body = (pos, body)
 --------------------------------------------------------------------------------
 
 groupExpression
-  :: _
+  :: Token SourceSpan
   -> Expression SourceSpan
-  -> _
+  -> Token SourceSpan
   -> Expression SourceSpan
 groupExpression leftParenthesis body rightParenthesis
   = GroupExpression pos body
@@ -359,5 +389,10 @@ integerExpression
   :: (SourceSpan, Integer)
   -> Expression SourceSpan
 integerExpression (pos, value) = LiteralExpression pos (IntegerLiteral value)
+
+booleanExpression
+  :: (SourceSpan, Bool)
+  -> Expression SourceSpan
+booleanExpression (pos, value) = LiteralExpression pos (BooleanLiteral value)
 
 }

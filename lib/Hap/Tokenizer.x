@@ -58,6 +58,7 @@ token :-
     "else"     -> KeywordToken (s, ElseKeyword)
     "entity"   -> KeywordToken (s, EntityKeyword)
     "every"    -> KeywordToken (s, EveryKeyword)
+    "false"    -> KeywordToken (s, FalseKeyword)
     "for"      -> KeywordToken (s, ForKeyword)
     "function" -> KeywordToken (s, FunctionKeyword)
     "has"      -> KeywordToken (s, HasKeyword)
@@ -71,6 +72,7 @@ token :-
     "remove"   -> KeywordToken (s, RemoveKeyword)
     "return"   -> KeywordToken (s, ReturnKeyword)
     "set"      -> KeywordToken (s, SetKeyword)
+    "true"     -> KeywordToken (s, TrueKeyword)
     "until"    -> KeywordToken (s, UntilKeyword)
     "var"      -> KeywordToken (s, VarKeyword)
     "when"     -> KeywordToken (s, WhenKeyword)
@@ -129,14 +131,17 @@ alexEOF :: Alex (Token SourceSpan)
 alexEOF = pure EofToken
 
 sourcePosition :: AlexPosn -> SourcePosition
-sourcePosition (AlexPn offset line column)
-  = SourcePosition (Offset offset) (Line line) (Column column)
+sourcePosition (AlexPn offset row column)
+  = SourcePosition (Offset offset) (Row row) (Column column)
 
 sourceSpan :: AlexPosn -> Int -> SourceSpan
 sourceSpan alexPosn width = SourceSpan (Just start, Just end)
   where
-    start@(SourcePosition offset line column) = sourcePosition alexPosn
-    end = SourcePosition offset line (Column (getColumn column + width))
+    start@(SourcePosition offset row column) = sourcePosition alexPosn
+    end = SourcePosition
+      (Offset (getOffset offset + width))
+      row
+      (Column (getColumn column + width))
 
 spanned
   :: (SourceSpan -> String -> a)
@@ -144,7 +149,7 @@ spanned
   -> Int
   -> Alex a
 spanned k
-  = \ (position, _previousChar, _bytes, token) width
-  -> pure $ k (sourceSpan position width) (take width token)
+  = \ (position, _previousChar, _bytes, buffer) width
+  -> pure $ k (sourceSpan position width) (take width buffer)
 
 }
