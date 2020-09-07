@@ -5,7 +5,7 @@ module Hap.Runtime.Types
   , Cell(..)
   , Env(..)
   , Flag(..)
-  , FlagSet(..)
+  , Flags(..)
   , Handler(..)
   , HapT(..)
   , Id
@@ -63,7 +63,7 @@ data Env m = Env
   , envNext :: !(IORef Id)
   , envQueue :: !(IORef [HapT m ()])
   , envOutputStr :: String -> m ()
-  , envFlags :: !FlagSet
+  , envFlags :: !Flags
   , envGraphicsChan :: Maybe (TChan (SDL.Renderer -> IO ()))
   }
 
@@ -72,7 +72,7 @@ data Flag
   | LoggingEnabledFlag
   deriving (Enum)
 
-data FlagSet = FlagSet !Word64
+data Flags = Flags !Word64
 
 -- A 'Handler' is an expression enqueued in response to an event, tagged with
 -- the event type for filtering events. A 'Set' event indicates that a cell was
@@ -109,13 +109,13 @@ data WeakCell m where
 -- Instances
 --------------------------------------------------------------------------------
 
--- FlagSet
+-- Flags
 
-instance Semigroup FlagSet where
-  FlagSet a <> FlagSet b = FlagSet (a .|. b)
+instance Semigroup Flags where
+  Flags a <> Flags b = Flags (a .|. b)
 
-instance Monoid FlagSet where
-  mempty = FlagSet 0
+instance Monoid Flags where
+  mempty = Flags 0
 
 -- HapT
 

@@ -1,6 +1,5 @@
 Haddockify docs
 Add Haddocks to modules
 Update links in Haddock docs
-FlagSet -> Flags
 Postfix 'qualified'
 Add logging flag

@@ -6,7 +6,7 @@ module Hap.Runtime
   , Types.Cell
   , Types.Env(..)
   , Types.Flag(..)
-  , Types.FlagSet
+  , Types.Flags
   , Types.Handler(..)
   , Types.HapT(HapT)
   , Types.Id
@@ -284,11 +284,11 @@ sequencePoint = HapT (\ env -> ((), []) <$ sequencePointM env)
 -- Flag Operations
 --------------------------------------------------------------------------------
 
-clearFlag :: Flag -> FlagSet -> FlagSet
-clearFlag flag (FlagSet bits) = FlagSet $ clearBit bits $ fromEnum flag
+clearFlag :: Flag -> Flags -> Flags
+clearFlag flag (Flags bits) = Flags $ clearBit bits $ fromEnum flag
 
-getFlag :: Flag -> FlagSet -> Bool
-getFlag flag (FlagSet bits) = testBit bits $ fromEnum flag
+getFlag :: Flag -> Flags -> Bool
+getFlag flag (Flags bits) = testBit bits $ fromEnum flag
 
-setFlag :: Flag -> FlagSet -> FlagSet
-setFlag flag (FlagSet bits) = FlagSet $ setBit bits $ fromEnum flag
+setFlag :: Flag -> Flags -> Flags
+setFlag flag (Flags bits) = Flags $ setBit bits $ fromEnum flag
