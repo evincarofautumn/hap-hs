@@ -34,6 +34,7 @@ data OutputMode = TextOutput | GraphicsOutput
 data Options = Options
   { optInputMode :: !InputMode
   , optInputPaths :: [FilePath]
+  , optLogging :: !Bool
   , optOutputMode :: !OutputMode
   }
 
@@ -52,6 +53,18 @@ optionsParser = runA proc () -> do
       \batch mode allows reading programs from source files."
     ] -< ()
 
+  optInputPaths <- opt
+    (many . Options.strArgument)
+    [ Options.metavar "PATH..."
+    , Options.help "Paths to Hap source files. \
+      \These are preloaded in interactive mode and executed in batch mode."
+    ] -< ()
+
+  optLogging <- opt Options.switch
+    [ Options.long "logging"
+    , Options.help "Enable internal logging."
+    ] -< ()
+
   optOutputMode <- opt
     (fmap (fromMaybe GraphicsOutput)
       . optional
@@ -63,13 +76,6 @@ optionsParser = runA proc () -> do
       \Graphics mode allows graphics/audio output and \
       \keyboard/mouse/joystick input; \
       \text mode allows text output and input."
-    ] -< ()
-
-  optInputPaths <- opt
-    (many . Options.strArgument)
-    [ Options.metavar "PATH..."
-    , Options.help "Paths to Hap source files. \
-      \These are preloaded in interactive mode and executed in batch mode."
     ] -< ()
 
   returnA -< Options{..}
@@ -111,7 +117,7 @@ start options = case optOutputMode options of
   TextOutput -> case optInputMode options of
 
     InteractiveInput -> do
-      (context, env, runRepl) <- newRepl []
+      (context, env, runRepl) <- newRepl optionFlags
       exit =<< runRepl
 
     BatchInput -> case optInputPaths options of
@@ -121,7 +127,7 @@ start options = case optOutputMode options of
         exit 1
 
       paths -> do
-        (context, env, runBatch) <- newBatch paths []
+        (context, env, runBatch) <- newBatch paths optionFlags
         exit =<< runBatch
 
   GraphicsOutput -> do
@@ -136,7 +142,7 @@ start options = case optOutputMode options of
     (mGraphicsChan, hapThread) <- case optInputMode options of
 
       InteractiveInput -> do
-        (context, env, runRepl) <- newRepl [GraphicsEnabledFlag]
+        (context, env, runRepl) <- newRepl $ GraphicsEnabledFlag : optionFlags
         pure (envGraphicsChan env, putMVar quit =<< runRepl)
 
       BatchInput -> case optInputPaths options of
@@ -146,7 +152,8 @@ start options = case optOutputMode options of
           pure (Nothing, putMVar quit 1)
 
         paths -> do
-          (context, env, runBatch) <- newBatch paths [GraphicsEnabledFlag]
+          (context, env, runBatch) <- newBatch paths
+            $ GraphicsEnabledFlag : optionFlags
           pure (envGraphicsChan env, putMVar quit =<< runBatch)
 
     case mGraphicsChan of
@@ -157,6 +164,11 @@ start options = case optOutputMode options of
     exit =<< takeMVar quit
 
   where
+
+    optionFlags :: [Flag]
+    optionFlags = concat
+      [ [LoggingEnabledFlag | optLogging options]
+      ]
 
     startGraphicsLoop
       :: SDL.Renderer
