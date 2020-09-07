@@ -28,6 +28,8 @@ library:
   - Hap.Language
   - Hap.Operators
   - Hap.Runtime
+  - Hap.Runtime.Errors
+  - Hap.Runtime.Types
   dependencies:
   - containers
   - sdl2
