@@ -1,4 +1,4 @@
-{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs #-}
 
 module Hap.Runtime.Errors
   ( Cycle(..)
@@ -13,7 +13,8 @@ import Hap.Runtime.Types
 --------------------------------------------------------------------------------
 
 -- The exception raised when a dependency cycle is detected.
-data Cycle = forall m. Cycle !(SomeCell m)
+data Cycle where
+  Cycle :: !(SomeCell m) -> Cycle
   deriving (Typeable)
 
 --------------------------------------------------------------------------------

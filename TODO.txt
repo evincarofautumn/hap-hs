@@ -1,4 +1,3 @@
-Use GADT syntax for existentials
 Use BlockArguments
 Haddockify docs
 Add Haddocks to modules

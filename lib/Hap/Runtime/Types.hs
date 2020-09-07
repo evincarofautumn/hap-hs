@@ -1,4 +1,4 @@
-{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs #-}
 
 module Hap.Runtime.Types
   ( Cache(..)
@@ -95,13 +95,15 @@ type Id = Int
 
 -- A cell with a hidden type. This is used to work with heterogeneous
 -- collections of cells.
-data SomeCell m = forall a. SomeCell (Cell m a)
+data SomeCell m where
+  SomeCell :: !(Cell m a) -> SomeCell m
 
 -- A weak cell is a weak reference to a cell. Cells use weak references to track
 -- their observers (the cells that need to be notified when the current cell is
 -- invalidated) because otherwise the dataflow graph would be fully connected
 -- and no memory would ever be reclaimed.
-data WeakCell m = forall a. WeakCell (Weak (Cell m a))
+data WeakCell m where
+  WeakCell :: !(Weak (Cell m a)) -> WeakCell m
 
 --------------------------------------------------------------------------------
 -- Instances
