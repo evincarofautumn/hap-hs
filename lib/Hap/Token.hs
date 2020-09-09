@@ -238,10 +238,12 @@ data Keyword
   | FunctionKeyword
   | HasKeyword
   | IfKeyword
+  | InKeyword
   | LastKeyword
   | LongKeyword
   | NeedsKeyword
   | NextKeyword
+  | NullKeyword
   | OnKeyword
   | RedoKeyword
   | RemoveKeyword
@@ -276,10 +278,12 @@ instance Pretty Keyword where
     FunctionKeyword -> "function"
     HasKeyword      -> "has"
     IfKeyword       -> "if"
+    InKeyword       -> "in"
     LastKeyword     -> "last"
     LongKeyword     -> "long"
     NeedsKeyword    -> "needs"
     NextKeyword     -> "next"
+    NullKeyword     -> "null"
     OnKeyword       -> "on"
     RedoKeyword     -> "redo"
     RemoveKeyword   -> "remove"

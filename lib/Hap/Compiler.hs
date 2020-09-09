@@ -12,10 +12,12 @@ import Control.Monad.IO.Class
 import Data.Fixed (mod')
 import Data.IORef
 import Data.List ((\\), foldl', intersect, union)
+import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Traversable (for)
 import Hap.Language
 import Hap.Runtime
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
@@ -86,8 +88,10 @@ compileStatement context statement = case statement of
   LastStatement !SourcePos !(Maybe Identifier)
   NextStatement !SourcePos !(Maybe Identifier)
 -}
-  OnChangeStatement pos vars body -> compileOnStatement context onChange pos vars body
-  OnSetStatement pos vars body -> compileOnStatement context onSet pos vars body
+  OnChangeStatement pos vars body
+    -> compileOnStatement context onChange pos vars body
+  OnSetStatement pos vars body
+    -> compileOnStatement context onSet pos vars body
 {-
   -- OnAddStatement !Identifier !Identifier !Statement
   -- OnRemoveStatement !Identifier !Identifier !Statement
@@ -107,31 +111,43 @@ compileStatement context statement = case statement of
     where
 
       compileBinding
-        :: (Identifier, Maybe (Signature anno), Maybe (Expression anno))
-        -> Either CompileError (Identifier, Maybe (Signature anno), Maybe (HapT m Value))
-      compileBinding (identifier, signature, initializer) = case initializer of
-        Just expression -> do
-          compiledExpression <- compileExpression context expression
-          pure (identifier, signature, Just compiledExpression)
-        Nothing -> do
-          pure (identifier, signature, Nothing)
+        :: Binding anno
+        -> Either CompileError (CompiledBinding m anno)
+      compileBinding Binding
+        { bindingAnno
+        , bindingName
+        , bindingSignature
+        , bindingInitializer
+        }
+        = do
+          compiledExpression <- for bindingInitializer
+            $ compileExpression context
+          pure CompiledBinding
+            { compiledBindingAnno        = bindingAnno
+            , compiledBindingName        = bindingName
+            , compiledBindingSignature   = bindingSignature
+            , compiledBindingInitializer = compiledExpression
+            }
 
       runInitializer
-        :: (Identifier, Maybe (Signature anno), Maybe (HapT m Value))
+        :: CompiledBinding m anno
         -> HapT m (Identifier, Cell m Value)
-      runInitializer (identifier, signature, initializer) = case initializer of
-        Just expression -> do
-          value <- expression
-          sequencePoint
-          -- FIXME: This copies the current value of the initializer; should it
-          -- generate a reactive binding instead? I.e., after "var x = y", if
-          -- 'y' changes, should 'x' change accordingly?
-          cell <- new (Just $ Text.unpack $ identifierText identifier) $ pure value
-          -- TODO: Check value against type signature.
-          pure (identifier, cell)
-        Nothing -> do
-          cell <- new (Just $ Text.unpack $ identifierText identifier) $ pure NullValue
-          pure (identifier, cell)
+      runInitializer CompiledBinding
+        { compiledBindingName
+        , compiledBindingInitializer
+        } = do
+        -- FIXME: This copies the current value of the initializer; should it
+        -- generate a reactive binding instead? I.e., after "var x = y", if 'y'
+        -- changes, should 'x' change accordingly?
+        value <- case compiledBindingInitializer of
+          Just expression -> expression <* sequencePoint
+          Nothing -> pure NullValue
+        -- TODO: Check value against type signature.
+        cell <- new (Just nameString) $ pure value
+        pure (compiledBindingName, cell)
+        where
+          -- TODO: Avoid unpacking text.
+          nameString = Text.unpack $ identifierText compiledBindingName
 
   WheneverStatement _pos condition body -> do
     compiledCondition <- compileExpression context condition
@@ -145,12 +161,19 @@ compileStatement context statement = case statement of
 -}
   _ -> Left $ "TODO: compile statement: " ++ show statement
 
+data CompiledBinding m anno = CompiledBinding
+  { compiledBindingAnno        :: anno
+  , compiledBindingName        :: !Identifier
+  , compiledBindingSignature   :: !(Maybe (Signature anno))
+  , compiledBindingInitializer :: !(Maybe (HapT m Value))
+  }
+
 compileOnStatement
   :: (MonadIO m, Show anno)
   => Context m
   -> ([Cell m Value] -> HapT m () -> HapT m a)
   -> anno
-  -> [Identifier]
+  -> NonEmpty Identifier
   -> Statement anno
   -> Either CompileError (HapT m ())
 compileOnStatement context statement pos vars body = do
@@ -162,7 +185,7 @@ compileOnStatement context statement pos vars body = do
       Just cell -> pure cell
       -- TODO: Raise 'Unbound' Hap error.
       Nothing -> error $ concat ["unbound name '", show var, "'"]
-    void $ statement cells compiledBody
+    void $ statement (NonEmpty.toList cells) compiledBody
     pure ()
 
 compileExpression

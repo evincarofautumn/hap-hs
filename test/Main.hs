@@ -1,12 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Main (main) where
 
 import Control.Monad (void)
 import Data.IORef (modifyIORef', newIORef, readIORef)
+import Data.List.NonEmpty (NonEmpty)
 import Hap.Compiler (compile, newEmptyContext)
 import Hap.Language
   ( BinaryOperator(..)
+  , Binding(..)
   , Expression(..)
   , Literal(..)
   , Program(..)
@@ -19,6 +22,7 @@ import Hap.Token (SourceSpan)
 import Hap.Runtime (Flag, newEmptyEnv, run)
 import Test.HUnit (assertBool, assertFailure)
 import Test.Hspec (Spec, describe, hspec, specify)
+import qualified Data.List.NonEmpty as NonEmpty
 
 main :: IO ()
 main = hspec spec
@@ -1021,7 +1025,7 @@ spec = do
       parseTest "function test(x) return x;" \ program -> case program of
         Right (Program
           [ FunctionStatement _ "test"
-            [("x", Nothing, Nothing)]
+            [Binding _ "x" Nothing Nothing]
             Nothing
             (ReturnStatement _
               (Just (IdentifierExpression _ "x")))
@@ -1031,7 +1035,7 @@ spec = do
       parseTest "function test(x) { return x; }" \ program -> case program of
         Right (Program
           [ FunctionStatement _ "test"
-            [("x", Nothing, Nothing)]
+            [Binding _ "x" Nothing Nothing]
             Nothing
             (BlockStatement _
               [ (ReturnStatement _
@@ -1043,7 +1047,7 @@ spec = do
       parseTest "function test(x: int) { return x; }" \ program -> case program of
         Right (Program
           [ FunctionStatement _ "test"
-            [("x", Just (ConstructorSignature _ "int"), Nothing)]
+            [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
             Nothing
             (BlockStatement _
               [ (ReturnStatement _
@@ -1056,7 +1060,7 @@ spec = do
         \ program -> case program of
         Right (Program
           [ FunctionStatement _ "test"
-            [("x", Just (ConstructorSignature _ "int"), Nothing)]
+            [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
             (Just (ConstructorSignature _ "int"))
             (BlockStatement _
               [ (ReturnStatement _
@@ -1069,7 +1073,7 @@ spec = do
         \ program -> case program of
         Right (Program
           [ FunctionStatement _ "test"
-            [ (,,)
+            [ Binding _
               "x"
               (Just (ConstructorSignature _ "int"))
               (Just (LiteralExpression _ (IntegerLiteral 0)))
@@ -1092,7 +1096,7 @@ spec = do
         \ program -> case program of
         Right (Program
           [ FunctionStatement _ "add"
-            [("x", Just (ConstructorSignature _ "int"), Nothing)]
+            [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
             (Just
               (FunctionSignature _
                 [ConstructorSignature _ "int"]
@@ -1255,7 +1259,7 @@ spec = do
       parseTest "on set (x) trace(\"x was set\");"
         \ program -> case program of
         Right (Program
-          [ OnSetStatement _ ["x"]
+          [ OnSetStatement _ (NonEmpty ["x"])
             (ExpressionStatement _
               (CallExpression _
                 (IdentifierExpression _ "trace")
@@ -1266,7 +1270,7 @@ spec = do
       parseTest "on set (x,) trace(\"x was set\");"
         \ program -> case program of
         Right (Program
-          [ OnSetStatement _ ["x"]
+          [ OnSetStatement _ (NonEmpty ["x"])
             (ExpressionStatement _
               (CallExpression _
                 (IdentifierExpression _ "trace")
@@ -1277,7 +1281,7 @@ spec = do
       parseTest "on set (x, y) trace(\"x or y was set\");"
         \ program -> case program of
         Right (Program
-          [ OnSetStatement _ ["x", "y"]
+          [ OnSetStatement _ (NonEmpty ["x", "y"])
             (ExpressionStatement _
               (CallExpression _
                 (IdentifierExpression _ "trace")
@@ -1288,7 +1292,7 @@ spec = do
       parseTest "on change (x) trace(\"x was changed\");"
         \ program -> case program of
         Right (Program
-          [ OnChangeStatement _ ["x"]
+          [ OnChangeStatement _ (NonEmpty ["x"])
             (ExpressionStatement _
               (CallExpression _
                 (IdentifierExpression _ "trace")
@@ -1299,7 +1303,7 @@ spec = do
       parseTest "on change (x,) trace(\"x was changed\");"
         \ program -> case program of
         Right (Program
-          [ OnChangeStatement _ ["x"]
+          [ OnChangeStatement _ (NonEmpty ["x"])
             (ExpressionStatement _
               (CallExpression _
                 (IdentifierExpression _ "trace")
@@ -1310,7 +1314,7 @@ spec = do
       parseTest "on change (x, y) trace(\"x or y was changed\");"
         \ program -> case program of
         Right (Program
-          [ OnChangeStatement _ ["x", "y"]
+          [ OnChangeStatement _ (NonEmpty ["x", "y"])
             (ExpressionStatement _
               (CallExpression _
                 (IdentifierExpression _ "trace")
@@ -1324,64 +1328,69 @@ spec = do
 
       parseTest "var x;" \ program -> case program of
         Right (Program
-          [ VarStatement _ [("x", Nothing, Nothing)]
+          [ VarStatement _ (NonEmpty [Binding _ "x" Nothing Nothing])
           ]) -> True
         _ -> False
 
       parseTest "var x = 1;" \ program -> case program of
         Right (Program
           [ VarStatement _
-            [ (,,)
-              "x"
-              Nothing
-              (Just (LiteralExpression _ (IntegerLiteral 1)))
-            ]
+            (NonEmpty
+              [ Binding _
+                "x"
+                Nothing
+                (Just (LiteralExpression _ (IntegerLiteral 1)))
+              ])
           ]) -> True
         _ -> False
 
       parseTest "var x: int;" \ program -> case program of
         Right (Program
           [ VarStatement _
-            [ (,,)
-              "x"
-              (Just (ConstructorSignature _ "int"))
-              Nothing
-            ]
+            (NonEmpty
+              [ Binding _
+                "x"
+                (Just (ConstructorSignature _ "int"))
+                Nothing
+              ])
           ]) -> True
         _ -> False
 
       parseTest "var x: int = 1;" \ program -> case program of
         Right (Program
           [ VarStatement _
-            [ (,,)
-              "x"
-              (Just (ConstructorSignature _ "int"))
-              (Just (LiteralExpression _ (IntegerLiteral 1)))
-            ]
+            (NonEmpty
+              [ Binding _
+                "x"
+                (Just (ConstructorSignature _ "int"))
+                (Just (LiteralExpression _ (IntegerLiteral 1)))
+              ])
           ]) -> True
         _ -> False
 
       parseTest "var x, y;" \ program -> case program of
         Right (Program
           [ VarStatement _
-            [ ("x", Nothing, Nothing)
-            , ("y", Nothing, Nothing)
-            ]
+            (NonEmpty
+              [ Binding _ "x" Nothing Nothing
+              , Binding _ "y" Nothing Nothing
+              ])
           ]) -> True
         _ -> False
 
       parseTest "var x = 1, y = 2;" \ program -> case program of
         Right (Program
           [ VarStatement _
-            [ (,,)
-              "x"
-              Nothing
-              (Just (LiteralExpression _ (IntegerLiteral 1)))
-            , (,,)
-              "y"
-              Nothing
-              (Just (LiteralExpression _ (IntegerLiteral 2)))
-            ]
+            (NonEmpty
+              [ Binding _
+                "x"
+                Nothing
+                (Just (LiteralExpression _ (IntegerLiteral 1)))
+              , Binding _
+                "y"
+                Nothing
+                (Just (LiteralExpression _ (IntegerLiteral 2)))
+              ])
           ]) -> True
         _ -> False
 
@@ -1394,22 +1403,23 @@ spec = do
         \ program -> case program of
         Right (Program
           [ VarStatement _
-            [ (,,)
-              "f"
-              (Just
-                (FunctionSignature _
-                  [ConstructorSignature _ "int"]
-                  (ConstructorSignature _ "int")))
-              (Just
-                (LiteralExpression _
-                  (FunctionLiteral
-                    (Just "identity")
-                    [("x", Nothing, Nothing)]
-                    Nothing
-                    (BlockStatement _
-                      [ ReturnStatement _ (Just (IdentifierExpression _ "x"))
-                      ]))))
-            ]
+            (NonEmpty
+              [ Binding _
+                "f"
+                (Just
+                  (FunctionSignature _
+                    [ConstructorSignature _ "int"]
+                    (ConstructorSignature _ "int")))
+                (Just
+                  (LiteralExpression _
+                    (FunctionLiteral
+                      (Just "identity")
+                      [("x", Nothing, Nothing)]
+                      Nothing
+                      (BlockStatement _
+                        [ ReturnStatement _ (Just (IdentifierExpression _ "x"))
+                        ]))))
+              ])
           ]) -> True
         _ -> False
 
@@ -1540,3 +1550,6 @@ evalTestFlags flags source successful = do
         void $ run env compiled
         result <- concat . reverse <$> readIORef output
         assertBool (concat [show source, " => ", show result]) $ successful result
+
+pattern NonEmpty :: [a] -> NonEmpty a
+pattern NonEmpty xs <- (NonEmpty.toList -> xs)

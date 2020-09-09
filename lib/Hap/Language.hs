@@ -2,6 +2,7 @@
 
 module Hap.Language
   ( BinaryOperator(..)
+  , Binding(..)
   , Expression(..)
   , Identifier(..)
   , Literal(..)
@@ -16,6 +17,7 @@ module Hap.Language
   , nativeFunction
   , nativeId
   , nativeName
+  , signatureAnno
   , statementAnno
   ) where
 
@@ -84,7 +86,7 @@ data Statement anno
   | ForEachStatement anno !Identifier !(Expression anno) !(Statement anno)
   | FunctionStatement anno
     !Identifier
-    [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
+    [Binding anno]
     !(Maybe (Signature anno))
     !(Statement anno)
   | IfStatement anno
@@ -93,13 +95,14 @@ data Statement anno
     !(Maybe (Statement anno))
   | LastStatement anno !(Maybe Identifier)
   | NextStatement anno !(Maybe Identifier)
-  | OnChangeStatement anno [Identifier] !(Statement anno)
-  | OnSetStatement anno [Identifier] !(Statement anno)
-  -- OnAddStatement !Identifier !Identifier !(Statement anno)
-  -- OnRemoveStatement !Identifier !Identifier !(Statement anno)
+  | OnAddStatement anno !Identifier !(Expression anno) !(Statement anno)
+  | OnChangeStatement anno (NonEmpty Identifier) !(Statement anno)
+  | OnRemoveStatement anno !Identifier !(Expression anno) !(Statement anno)
+  | OnSetStatement anno (NonEmpty Identifier) !(Statement anno)
   | RedoStatement anno !(Maybe Identifier)
   | ReturnStatement anno !(Maybe (Expression anno))
-  | VarStatement anno [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
+  | VarStatement anno (NonEmpty (Binding anno))
+  | WhenStatement anno !(Expression anno) !(Statement anno)
   | WheneverStatement anno !(Expression anno) !(Statement anno)
   | WhileStatement anno !(Expression anno) !(Statement anno)
   deriving stock (Eq, Functor, Ord, Show)
@@ -118,13 +121,24 @@ statementAnno = \ case
   IfStatement         anno _ _ _   -> anno
   LastStatement       anno _       -> anno
   NextStatement       anno _       -> anno
+  OnAddStatement      anno _ _ _   -> anno
   OnChangeStatement   anno _ _     -> anno
+  OnRemoveStatement   anno _ _ _   -> anno
   OnSetStatement      anno _ _     -> anno
   RedoStatement       anno _       -> anno
   ReturnStatement     anno _       -> anno
   VarStatement        anno _       -> anno
+  WhenStatement       anno _ _     -> anno
   WheneverStatement   anno _ _     -> anno
   WhileStatement      anno _ _     -> anno
+
+data Binding anno = Binding
+  { bindingAnno        :: anno
+  , bindingName        :: !Identifier
+  , bindingSignature   :: !(Maybe (Signature anno))
+  , bindingInitializer :: !(Maybe (Expression anno))
+  }
+  deriving stock (Eq, Functor, Ord, Show)
 
 data Expression anno
   = LiteralExpression anno !(Literal anno)
@@ -252,6 +266,12 @@ data Signature anno
   | ConstructorSignature anno !Identifier
   | FunctionSignature anno [Signature anno] !(Signature anno)
   deriving stock (Eq, Functor, Ord, Show)
+
+signatureAnno :: Signature anno -> anno
+signatureAnno = \ case
+  ApplicationSignature anno _ _ -> anno
+  ConstructorSignature anno _   -> anno
+  FunctionSignature    anno _ _ -> anno
 
 newtype Identifier = Identifier { getIdentifier :: NonEmpty Text }
   deriving stock (Eq, Ord)
