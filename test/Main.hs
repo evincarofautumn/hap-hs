@@ -3,7 +3,7 @@
 
 module Main (main) where
 
-import Control.Monad (void)
+import Control.Monad (join, void)
 import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.List.NonEmpty (NonEmpty)
 import Hap.Compiler (compile, newEmptyContext)
@@ -16,12 +16,14 @@ import Hap.Language
   , Signature(..)
   , Statement(..)
   , UnaryOperator(..)
+  , decimalIntegerLiteralString
   )
 import Hap.ParserWrapper (ParseError, parseProgram)
-import Hap.Token (SourceSpan)
+import Hap.Token (DecimalDigit(..), SourceSpan)
 import Hap.Runtime (Flag, newEmptyEnv, run)
 import Test.HUnit (assertBool, assertFailure)
 import Test.Hspec (Spec, describe, hspec, specify)
+import Text.Read (readMaybe)
 import qualified Data.List.NonEmpty as NonEmpty
 
 main :: IO ()
@@ -167,6 +169,48 @@ spec = do
 
     describe "expression statements" do
 
+      describe "identifiers" do
+
+        specify "alpha" do
+          parseTest "velocity;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "velocity")
+              ]) -> True
+            _ -> False
+
+        specify "Alpha" do
+          parseTest "Block;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "Block")
+              ]) -> True
+            _ -> False
+
+        specify "alnum" do
+          parseTest "player1;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "player1")
+              ]) -> True
+            _ -> False
+
+        specify "Alpha Alpha" do
+          parseTest "Main Window;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "Main Window")
+              ]) -> True
+            _ -> False
+
+        specify "alpha num keyword alpha" do
+          parseTest "level 1 return door;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "level 1 return door")
+              ]) -> True
+            _ -> False
+
       describe "literal expressions" do
 
         specify "boolean true" do
@@ -222,6 +266,32 @@ spec = do
             Right (Program
               [ ExpressionStatement _
                 (LiteralExpression _ (IntegerLiteral 1234567890))
+              ]) -> True
+            _ -> False
+
+        specify "two-part integer" do
+          parseTest "1 000;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (DecimalIntegerLiteral (NonEmpty
+                  [ snd -> NonEmpty [DecimalDigit 1]
+                  , snd -> NonEmpty
+                    [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
+                  ])))
+              ]) -> True
+            _ -> False
+
+        specify "three-part integer" do
+          parseTest "1 000 000;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (DecimalIntegerLiteral (NonEmpty
+                  [ snd -> NonEmpty [DecimalDigit 1]
+                  , snd -> NonEmpty
+                    [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
+                  , snd -> NonEmpty
+                    [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
+                  ])))
               ]) -> True
             _ -> False
 
@@ -853,406 +923,429 @@ spec = do
               ]) -> True
             _ -> False
 
-      specify "'if' expressions" do
+      describe "'if' expressions" do
 
-        parseTest "(if (x) a else b)();" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (CallExpression _
-                (GroupExpression _
-                  (IfExpression _
-                    (IdentifierExpression _ "x")
-                    (IdentifierExpression _ "a")
-                    (IdentifierExpression _ "b")))
-                [])
-            ]) -> True
-          _ -> False
-
-      specify "'let' expressions" do
-
-        parseTest "let x = 1 in trace(x);" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LetExpression _
-                [("x", Nothing, LiteralExpression _ (IntegerLiteral 1))]
+        specify "basic" do
+          parseTest "(if (x) a else b)();" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
                 (CallExpression _
-                  (IdentifierExpression _ "trace")
-                  [IdentifierExpression _ "x"]))
-            ]) -> True
-          _ -> False
+                  (GroupExpression _
+                    (IfExpression _
+                      (IdentifierExpression _ "x")
+                      (IdentifierExpression _ "a")
+                      (IdentifierExpression _ "b")))
+                  [])
+              ]) -> True
+            _ -> False
 
-        parseTest "let x = 1, y = 2 in trace(x + y);"
-          \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LetExpression _
-                [ ("x", Nothing, LiteralExpression _ (IntegerLiteral 1))
-                , ("y", Nothing, LiteralExpression _ (IntegerLiteral 2))
-                ]
-                (CallExpression _
-                  (IdentifierExpression _ "trace")
-                  [BinaryExpression _ BinaryAdd
-                    (IdentifierExpression _ "x")
-                    (IdentifierExpression _ "y")]))
-            ]) -> True
-          _ -> False
+      describe "'let' expressions" do
+
+        specify "single" do
+          parseTest "let x = 1 in trace(x);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LetExpression _
+                  [("x", Nothing, LiteralExpression _ (IntegerLiteral 1))]
+                  (CallExpression _
+                    (IdentifierExpression _ "trace")
+                    [IdentifierExpression _ "x"]))
+              ]) -> True
+            _ -> False
+
+        specify "multiple" do
+          parseTest "let x = 1, y = 2 in trace(x + y);"
+            \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LetExpression _
+                  [ ("x", Nothing, LiteralExpression _ (IntegerLiteral 1))
+                  , ("y", Nothing, LiteralExpression _ (IntegerLiteral 2))
+                  ]
+                  (CallExpression _
+                    (IdentifierExpression _ "trace")
+                    [BinaryExpression _ BinaryAdd
+                      (IdentifierExpression _ "x")
+                      (IdentifierExpression _ "y")]))
+              ]) -> True
+            _ -> False
 
         -- The 'in' keyword shouldn't cause ambiguity with the 'is in' operator.
-        parseTest "let a = b is in c in a is in d;"
+        specify "with 'is in'" do
+          parseTest "let a = b is in c in a is in d;"
+            \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LetExpression _
+                  [ (,,)
+                    "a"
+                    Nothing
+                    (BinaryExpression _ BinaryElement
+                      (IdentifierExpression _ "b")
+                      (IdentifierExpression _ "c"))
+                  ]
+                  (BinaryExpression _ BinaryElement
+                    (IdentifierExpression _ "a")
+                    (IdentifierExpression _ "d")))
+              ]) -> True
+            _ -> False
+
+        specify "type annotation" do
+          parseTest "let x:int = 1 in x;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LetExpression _
+                  [ (,,)
+                    "x"
+                    (Just (ConstructorSignature _ "int"))
+                    (LiteralExpression _ (IntegerLiteral 1))
+                  ]
+                  (IdentifierExpression _ "x"))
+              ]) -> True
+            _ -> False
+
+    describe "'after' statement" do
+
+      specify "basic" do
+        parseTest "after (player.score = 0)\n\ttrace(\"You lost!\");"
           \ program -> case program of
           Right (Program
-            [ ExpressionStatement _
-              (LetExpression _
-                [ (,,)
-                  "a"
-                  Nothing
-                  (BinaryExpression _ BinaryElement
-                    (IdentifierExpression _ "b")
-                    (IdentifierExpression _ "c"))
-                ]
-                (BinaryExpression _ BinaryElement
-                  (IdentifierExpression _ "a")
-                  (IdentifierExpression _ "d")))
-            ]) -> True
-          _ -> False
-
-        parseTest "let x:int = 1 in x;" \ program -> case program of
-          Right (Program
-            [ ExpressionStatement _
-              (LetExpression _
-                [ (,,)
-                  "x"
-                  (Just (ConstructorSignature _ "int"))
-                  (LiteralExpression _ (IntegerLiteral 1))
-                ]
-                (IdentifierExpression _ "x"))
-            ]) -> True
-          _ -> False
-
-    specify "'after' statement" do
-
-      parseTest "after (player.score = 0)\n\ttrace(\"You lost!\");"
-        \ program -> case program of
-        Right (Program
-          [ AfterStatement _
-            (BinaryExpression _ BinaryEqual
-              (DotExpression _
-                (IdentifierExpression _ "player")
-                "score")
-              (LiteralExpression _ (IntegerLiteral 0)))
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "trace")
-                [LiteralExpression _ (TextLiteral "You lost!")]))
-          ]) -> True
-        _ -> False
-
-    specify "'as long as' statement" do
-
-      parseTest "as long as (player.x < 0) {\n\tout_of_bounds();\n}"
-        \ program -> case program of
-        Right (Program
-          [ AsLongAsStatement _
-            (BinaryExpression _ BinaryLess
-              (DotExpression _
-                (IdentifierExpression _ "player")
-                "x")
-              (LiteralExpression _ (IntegerLiteral 0)))
-            (BlockStatement _
-              [ (ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "out_of_bounds")
-                  []))
-              ])
-          ]) -> True
-        _ -> False
-
-    specify "'for' statements" do
-
-      parseTest "for each enemy in (enemies) { hurt(enemy); }"
-        \ program -> case program of
-        Right (Program
-          [ ForEachStatement _ "enemy" (IdentifierExpression _ "enemies")
-            (BlockStatement _
-              [ ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "hurt")
-                  [IdentifierExpression _ "enemy"])
-              ])
-          ]) -> True
-        _ -> False
-
-      parseTest
-        "for all bullet in (bullets) {\n\
-        \\twhenever (collides(bullet, player)) {\n\
-        \\t\tdestroy (bullet);\n\
-        \\t\thurt (player);\n\
-        \\t}\n\
-        \}\n\
-        \\&"
-        \ program -> case program of
-        Right (Program
-          [ ForAllStatement _ "bullet" (IdentifierExpression _ "bullets")
-            (BlockStatement _
-              [ WheneverStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "collides")
-                  [ IdentifierExpression _ "bullet"
-                  , IdentifierExpression _ "player"
-                  ])
-                (BlockStatement _
-                  [ ExpressionStatement _
-                    (CallExpression _
-                      (IdentifierExpression _ "destroy")
-                      [IdentifierExpression _ "bullet"])
-                  , ExpressionStatement _
-                    (CallExpression _
-                      (IdentifierExpression _ "hurt")
-                      [IdentifierExpression _ "player"])
-                  ])
-              ])
-          ]) -> True
-        _ -> False
-
-    specify "'function' statements" do
-
-      parseTest "function test();" \ program -> case program of
-        Right (Program
-          [ FunctionStatement _ "test" [] Nothing (EmptyStatement _)
-          ]) -> True
-        _ -> False
-
-      parseTest "function test(x) return x;" \ program -> case program of
-        Right (Program
-          [ FunctionStatement _ "test"
-            [Binding _ "x" Nothing Nothing]
-            Nothing
-            (ReturnStatement _
-              (Just (IdentifierExpression _ "x")))
-          ]) -> True
-        _ -> False
-
-      parseTest "function test(x) { return x; }" \ program -> case program of
-        Right (Program
-          [ FunctionStatement _ "test"
-            [Binding _ "x" Nothing Nothing]
-            Nothing
-            (BlockStatement _
-              [ (ReturnStatement _
-                (Just (IdentifierExpression _ "x")))
-              ])
-          ]) -> True
-        _ -> False
-
-      parseTest "function test(x: int) { return x; }" \ program -> case program of
-        Right (Program
-          [ FunctionStatement _ "test"
-            [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
-            Nothing
-            (BlockStatement _
-              [ (ReturnStatement _
-                (Just (IdentifierExpression _ "x")))
-              ])
-          ]) -> True
-        _ -> False
-
-      parseTest "function test(x: int): int { return x; }"
-        \ program -> case program of
-        Right (Program
-          [ FunctionStatement _ "test"
-            [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
-            (Just (ConstructorSignature _ "int"))
-            (BlockStatement _
-              [ (ReturnStatement _
-                (Just (IdentifierExpression _ "x")))
-              ])
-          ]) -> True
-        _ -> False
-
-      parseTest "function test(x: int = 0): int { return x; }"
-        \ program -> case program of
-        Right (Program
-          [ FunctionStatement _ "test"
-            [ Binding _
-              "x"
-              (Just (ConstructorSignature _ "int"))
-              (Just (LiteralExpression _ (IntegerLiteral 0)))
-            ]
-            (Just (ConstructorSignature _ "int"))
-            (BlockStatement _
-              [ (ReturnStatement _
-                (Just (IdentifierExpression _ "x")))
-              ])
-          ]) -> True
-        _ -> False
-
-      parseTest
-        "function add(x: int): function(int): int {\n\
-        \\treturn function(y: int): (int) {\n\
-        \\t\treturn x + y;\n\
-        \\t};\n\
-        \}\n\
-        \\&"
-        \ program -> case program of
-        Right (Program
-          [ FunctionStatement _ "add"
-            [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
-            (Just
-              (FunctionSignature _
-                [ConstructorSignature _ "int"]
-                (ConstructorSignature _ "int")))
-            (BlockStatement _
-              [ (ReturnStatement _
-                (Just
-                  (LiteralExpression _
-                    (FunctionLiteral
-                      Nothing
-                      [ (,,)
-                        "y"
-                        (Just (ConstructorSignature _ "int"))
-                        Nothing
-                      ]
-                      (Just (ConstructorSignature _ "int"))
-                      (BlockStatement _
-                        [ ReturnStatement _
-                          (Just
-                            (BinaryExpression _ BinaryAdd
-                              (IdentifierExpression _ "x")
-                              (IdentifierExpression _ "y")))
-                        ])))))
-              ])
-          ]) -> True
-        _ -> False
-
-    specify "'if' statements" do
-
-      parseTest "if (true) good();" \ program -> case program of
-        Right (Program
-          [ IfStatement _
-            (LiteralExpression _ (BooleanLiteral True))
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "good")
-                []))
-            Nothing
-          ]) -> True
-        _ -> False
-
-      parseTest "if (true) good(); else bad();" \ program -> case program of
-        Right (Program
-          [ IfStatement _
-            (LiteralExpression _ (BooleanLiteral True))
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "good")
-                []))
-            (Just
+            [ AfterStatement _
+              (BinaryExpression _ BinaryEqual
+                (DotExpression _
+                  (IdentifierExpression _ "player")
+                  "score")
+                (LiteralExpression _ (IntegerLiteral 0)))
               (ExpressionStatement _
                 (CallExpression _
-                  (IdentifierExpression _ "bad")
-                  [])))
-          ]) -> True
-        _ -> False
+                  (IdentifierExpression _ "trace")
+                  [LiteralExpression _ (TextLiteral "You lost!")]))
+            ]) -> True
+          _ -> False
 
-      parseTest "if (true) { good(); }" \ program -> case program of
-        Right (Program
-          [ IfStatement _
-            (LiteralExpression _ (BooleanLiteral True))
-            (BlockStatement _
-              [ ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "good")
-                  [])
-              ])
-            Nothing
-          ]) -> True
-        _ -> False
+    describe "'as long as' statement" do
 
-      parseTest "if (true) { good(); } else { bad(); }"
-        \ program -> case program of
-        Right (Program
-          [ IfStatement _
-            (LiteralExpression _ (BooleanLiteral True))
-            (BlockStatement _
-              [ ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "good")
-                  [])
-              ])
-            (Just
+      specify "basic" do
+        parseTest "as long as (player.x < 0) {\n\tout_of_bounds();\n}"
+          \ program -> case program of
+          Right (Program
+            [ AsLongAsStatement _
+              (BinaryExpression _ BinaryLess
+                (DotExpression _
+                  (IdentifierExpression _ "player")
+                  "x")
+                (LiteralExpression _ (IntegerLiteral 0)))
               (BlockStatement _
                 [ (ExpressionStatement _
                   (CallExpression _
-                    (IdentifierExpression _ "bad")
+                    (IdentifierExpression _ "out_of_bounds")
                     []))
-                ]))
-          ]) -> True
-        _ -> False
+                ])
+            ]) -> True
+          _ -> False
 
-      parseTest "if (true) good(); else if (false) bad();"
-        \ program -> case program of
-        Right (Program
-          [ IfStatement _
-            (LiteralExpression _ (BooleanLiteral True))
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "good")
-                []))
-            (Just
-              (IfStatement _
-                (LiteralExpression _ (BooleanLiteral False))
-                (ExpressionStatement _
+    describe "'for' statements" do
+
+      specify "for each" do
+        parseTest "for each enemy in (enemies) { hurt(enemy); }"
+          \ program -> case program of
+          Right (Program
+            [ ForEachStatement _ "enemy" (IdentifierExpression _ "enemies")
+              (BlockStatement _
+                [ ExpressionStatement _
                   (CallExpression _
-                    (IdentifierExpression _ "bad")
-                    []))
-                Nothing))
-          ]) -> True
-        _ -> False
+                    (IdentifierExpression _ "hurt")
+                    [IdentifierExpression _ "enemy"])
+                ])
+            ]) -> True
+          _ -> False
 
-      parseTest "if (true) good(); else if (false) bad(); else really_bad();"
-        \ program -> case program of
-        Right (Program
-          [ IfStatement _
-            (LiteralExpression _ (BooleanLiteral True))
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "good")
-                []))
-            (Just
-              (IfStatement _
-                (LiteralExpression _ (BooleanLiteral False))
-                (ExpressionStatement _
+      specify "for all" do
+        parseTest
+          "for all bullet in (bullets) {\n\
+          \\twhenever (collides(bullet, player)) {\n\
+          \\t\tdestroy (bullet);\n\
+          \\t\thurt (player);\n\
+          \\t}\n\
+          \}\n\
+          \\&"
+          \ program -> case program of
+          Right (Program
+            [ ForAllStatement _ "bullet" (IdentifierExpression _ "bullets")
+              (BlockStatement _
+                [ WheneverStatement _
                   (CallExpression _
-                    (IdentifierExpression _ "bad")
-                    []))
-                (Just
-                  (ExpressionStatement _
-                    (CallExpression _
-                      (IdentifierExpression _ "really_bad")
-                      [])))))
-          ]) -> True
-        _ -> False
+                    (IdentifierExpression _ "collides")
+                    [ IdentifierExpression _ "bullet"
+                    , IdentifierExpression _ "player"
+                    ])
+                  (BlockStatement _
+                    [ ExpressionStatement _
+                      (CallExpression _
+                        (IdentifierExpression _ "destroy")
+                        [IdentifierExpression _ "bullet"])
+                    , ExpressionStatement _
+                      (CallExpression _
+                        (IdentifierExpression _ "hurt")
+                        [IdentifierExpression _ "player"])
+                    ])
+                ])
+            ]) -> True
+          _ -> False
 
-      -- See note [Dangling Else].
-      parseTest "if (a) if (b) c(); else d();"
-        \ program -> case program of
-        Right (Program
-          [ IfStatement _
-            (IdentifierExpression _ "a")
-            (IfStatement _
-              (IdentifierExpression _ "b")
+    describe "'function' statements" do
+
+      specify "empty" do
+        parseTest "function test();" \ program -> case program of
+          Right (Program
+            [ FunctionStatement _ "test" [] Nothing (EmptyStatement _)
+            ]) -> True
+          _ -> False
+
+      specify "return statement" do
+        parseTest "function test(x) return x;" \ program -> case program of
+          Right (Program
+            [ FunctionStatement _ "test"
+              [Binding _ "x" Nothing Nothing]
+              Nothing
+              (ReturnStatement _
+                (Just (IdentifierExpression _ "x")))
+            ]) -> True
+          _ -> False
+
+      specify "braces and return statement" do
+        parseTest "function test(x) { return x; }" \ program -> case program of
+          Right (Program
+            [ FunctionStatement _ "test"
+              [Binding _ "x" Nothing Nothing]
+              Nothing
+              (BlockStatement _
+                [ (ReturnStatement _
+                  (Just (IdentifierExpression _ "x")))
+                ])
+            ]) -> True
+          _ -> False
+
+      specify "parameter with type annotation" do
+        parseTest "function test(x: int) { return x; }" \ program -> case program of
+          Right (Program
+            [ FunctionStatement _ "test"
+              [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
+              Nothing
+              (BlockStatement _
+                [ (ReturnStatement _
+                  (Just (IdentifierExpression _ "x")))
+                ])
+            ]) -> True
+          _ -> False
+
+      specify "parameter and return type" do
+        parseTest "function test(x: int): int { return x; }"
+          \ program -> case program of
+          Right (Program
+            [ FunctionStatement _ "test"
+              [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
+              (Just (ConstructorSignature _ "int"))
+              (BlockStatement _
+                [ (ReturnStatement _
+                  (Just (IdentifierExpression _ "x")))
+                ])
+            ]) -> True
+          _ -> False
+
+      specify "parameter with default value" do
+        parseTest "function test(x: int = 0): int { return x; }"
+          \ program -> case program of
+          Right (Program
+            [ FunctionStatement _ "test"
+              [ Binding _
+                "x"
+                (Just (ConstructorSignature _ "int"))
+                (Just (LiteralExpression _ (IntegerLiteral 0)))
+              ]
+              (Just (ConstructorSignature _ "int"))
+              (BlockStatement _
+                [ (ReturnStatement _
+                  (Just (IdentifierExpression _ "x")))
+                ])
+            ]) -> True
+          _ -> False
+
+      specify "return function" do
+        parseTest
+          "function add(x: int): function(int): int {\n\
+          \\treturn function(y: int): (int) {\n\
+          \\t\treturn x + y;\n\
+          \\t};\n\
+          \}\n\
+          \\&"
+          \ program -> case program of
+          Right (Program
+            [ FunctionStatement _ "add"
+              [Binding _ "x" (Just (ConstructorSignature _ "int")) Nothing]
+              (Just
+                (FunctionSignature _
+                  [ConstructorSignature _ "int"]
+                  (ConstructorSignature _ "int")))
+              (BlockStatement _
+                [ (ReturnStatement _
+                  (Just
+                    (LiteralExpression _
+                      (FunctionLiteral
+                        Nothing
+                        [ (,,)
+                          "y"
+                          (Just (ConstructorSignature _ "int"))
+                          Nothing
+                        ]
+                        (Just (ConstructorSignature _ "int"))
+                        (BlockStatement _
+                          [ ReturnStatement _
+                            (Just
+                              (BinaryExpression _ BinaryAdd
+                                (IdentifierExpression _ "x")
+                                (IdentifierExpression _ "y")))
+                          ])))))
+                ])
+            ]) -> True
+          _ -> False
+
+    describe "'if' statements" do
+
+      specify "one-sided with single statement" do
+        parseTest "if (true) good();" \ program -> case program of
+          Right (Program
+            [ IfStatement _
+              (LiteralExpression _ (BooleanLiteral True))
               (ExpressionStatement _
                 (CallExpression _
-                  (IdentifierExpression _ "c")
+                  (IdentifierExpression _ "good")
+                  []))
+              Nothing
+            ]) -> True
+          _ -> False
+
+      specify "two-sided with single statements" do
+        parseTest "if (true) good(); else bad();" \ program -> case program of
+          Right (Program
+            [ IfStatement _
+              (LiteralExpression _ (BooleanLiteral True))
+              (ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "good")
                   []))
               (Just
                 (ExpressionStatement _
                   (CallExpression _
-                    (IdentifierExpression _ "d")
-                    []))))
-            Nothing
-          ]) -> True
-        _ -> False
+                    (IdentifierExpression _ "bad")
+                    [])))
+            ]) -> True
+          _ -> False
+
+      specify "one-sided with block" do
+        parseTest "if (true) { good(); }" \ program -> case program of
+          Right (Program
+            [ IfStatement _
+              (LiteralExpression _ (BooleanLiteral True))
+              (BlockStatement _
+                [ ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "good")
+                    [])
+                ])
+              Nothing
+            ]) -> True
+          _ -> False
+
+      specify "two-sided with blocks" do
+        parseTest "if (true) { good(); } else { bad(); }"
+          \ program -> case program of
+          Right (Program
+            [ IfStatement _
+              (LiteralExpression _ (BooleanLiteral True))
+              (BlockStatement _
+                [ ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "good")
+                    [])
+                ])
+              (Just
+                (BlockStatement _
+                  [ (ExpressionStatement _
+                    (CallExpression _
+                      (IdentifierExpression _ "bad")
+                      []))
+                  ]))
+            ]) -> True
+          _ -> False
+
+      specify "one-sided 'else if'" do
+        parseTest "if (true) good(); else if (false) bad();"
+          \ program -> case program of
+          Right (Program
+            [ IfStatement _
+              (LiteralExpression _ (BooleanLiteral True))
+              (ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "good")
+                  []))
+              (Just
+                (IfStatement _
+                  (LiteralExpression _ (BooleanLiteral False))
+                  (ExpressionStatement _
+                    (CallExpression _
+                      (IdentifierExpression _ "bad")
+                      []))
+                  Nothing))
+            ]) -> True
+          _ -> False
+
+      specify "if-else if-else" do
+        parseTest "if (true) good(); else if (false) bad(); else really_bad();"
+          \ program -> case program of
+          Right (Program
+            [ IfStatement _
+              (LiteralExpression _ (BooleanLiteral True))
+              (ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "good")
+                  []))
+              (Just
+                (IfStatement _
+                  (LiteralExpression _ (BooleanLiteral False))
+                  (ExpressionStatement _
+                    (CallExpression _
+                      (IdentifierExpression _ "bad")
+                      []))
+                  (Just
+                    (ExpressionStatement _
+                      (CallExpression _
+                        (IdentifierExpression _ "really_bad")
+                        [])))))
+            ]) -> True
+          _ -> False
+
+      -- See note [Dangling Else].
+      specify "dangling else" do
+        parseTest "if (a) if (b) c(); else d();"
+          \ program -> case program of
+          Right (Program
+            [ IfStatement _
+              (IdentifierExpression _ "a")
+              (IfStatement _
+                (IdentifierExpression _ "b")
+                (ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "c")
+                    []))
+                (Just
+                  (ExpressionStatement _
+                    (CallExpression _
+                      (IdentifierExpression _ "d")
+                      []))))
+              Nothing
+            ]) -> True
+          _ -> False
 
     specify "'on' statements" do
 
@@ -1324,104 +1417,111 @@ spec = do
 
       -- TODO: on add, on remove
 
-    specify "'var' statements" do
+    describe "'var' statements" do
 
-      parseTest "var x;" \ program -> case program of
-        Right (Program
-          [ VarStatement _ (NonEmpty [Binding _ "x" Nothing Nothing])
-          ]) -> True
-        _ -> False
+      specify "single" do
+        parseTest "var x;" \ program -> case program of
+          Right (Program
+            [ VarStatement _ (NonEmpty [Binding _ "x" Nothing Nothing])
+            ]) -> True
+          _ -> False
 
-      parseTest "var x = 1;" \ program -> case program of
-        Right (Program
-          [ VarStatement _
-            (NonEmpty
-              [ Binding _
-                "x"
-                Nothing
-                (Just (LiteralExpression _ (IntegerLiteral 1)))
-              ])
-          ]) -> True
-        _ -> False
+      specify "single, initializer" do
+        parseTest "var x = 1;" \ program -> case program of
+          Right (Program
+            [ VarStatement _
+              (NonEmpty
+                [ Binding _
+                  "x"
+                  Nothing
+                  (Just (LiteralExpression _ (IntegerLiteral 1)))
+                ])
+            ]) -> True
+          _ -> False
 
-      parseTest "var x: int;" \ program -> case program of
-        Right (Program
-          [ VarStatement _
-            (NonEmpty
-              [ Binding _
-                "x"
-                (Just (ConstructorSignature _ "int"))
-                Nothing
-              ])
-          ]) -> True
-        _ -> False
+      specify "single, annotation" do
+        parseTest "var x: int;" \ program -> case program of
+          Right (Program
+            [ VarStatement _
+              (NonEmpty
+                [ Binding _
+                  "x"
+                  (Just (ConstructorSignature _ "int"))
+                  Nothing
+                ])
+            ]) -> True
+          _ -> False
 
-      parseTest "var x: int = 1;" \ program -> case program of
-        Right (Program
-          [ VarStatement _
-            (NonEmpty
-              [ Binding _
-                "x"
-                (Just (ConstructorSignature _ "int"))
-                (Just (LiteralExpression _ (IntegerLiteral 1)))
-              ])
-          ]) -> True
-        _ -> False
+      specify "single, annotation, initializer" do
+        parseTest "var x: int = 1;" \ program -> case program of
+          Right (Program
+            [ VarStatement _
+              (NonEmpty
+                [ Binding _
+                  "x"
+                  (Just (ConstructorSignature _ "int"))
+                  (Just (LiteralExpression _ (IntegerLiteral 1)))
+                ])
+            ]) -> True
+          _ -> False
 
-      parseTest "var x, y;" \ program -> case program of
-        Right (Program
-          [ VarStatement _
-            (NonEmpty
-              [ Binding _ "x" Nothing Nothing
-              , Binding _ "y" Nothing Nothing
-              ])
-          ]) -> True
-        _ -> False
+      specify "plural" do
+        parseTest "var x, y;" \ program -> case program of
+          Right (Program
+            [ VarStatement _
+              (NonEmpty
+                [ Binding _ "x" Nothing Nothing
+                , Binding _ "y" Nothing Nothing
+                ])
+            ]) -> True
+          _ -> False
 
-      parseTest "var x = 1, y = 2;" \ program -> case program of
-        Right (Program
-          [ VarStatement _
-            (NonEmpty
-              [ Binding _
-                "x"
-                Nothing
-                (Just (LiteralExpression _ (IntegerLiteral 1)))
-              , Binding _
-                "y"
-                Nothing
-                (Just (LiteralExpression _ (IntegerLiteral 2)))
-              ])
-          ]) -> True
-        _ -> False
+      specify "plural, initializers" do
+        parseTest "var x = 1, y = 2;" \ program -> case program of
+          Right (Program
+            [ VarStatement _
+              (NonEmpty
+                [ Binding _
+                  "x"
+                  Nothing
+                  (Just (LiteralExpression _ (IntegerLiteral 1)))
+                , Binding _
+                  "y"
+                  Nothing
+                  (Just (LiteralExpression _ (IntegerLiteral 2)))
+                ])
+            ]) -> True
+          _ -> False
 
-      parseTest
-        "var f: function(int): int =\n\
-        \\tfunction identity(x) {\n\
-        \\t\treturn x;\n\
-        \\t};\n\
-        \\&"
-        \ program -> case program of
-        Right (Program
-          [ VarStatement _
-            (NonEmpty
-              [ Binding _
-                "f"
-                (Just
-                  (FunctionSignature _
-                    [ConstructorSignature _ "int"]
-                    (ConstructorSignature _ "int")))
-                (Just
-                  (LiteralExpression _
-                    (FunctionLiteral
-                      (Just "identity")
-                      [("x", Nothing, Nothing)]
-                      Nothing
-                      (BlockStatement _
-                        [ ReturnStatement _ (Just (IdentifierExpression _ "x"))
-                        ]))))
-              ])
-          ]) -> True
-        _ -> False
+      specify "single, function type" do
+        parseTest
+          "var f: function(int): int =\n\
+          \\tfunction identity(x) {\n\
+          \\t\treturn x;\n\
+          \\t};\n\
+          \\&"
+          \ program -> case program of
+          Right (Program
+            [ VarStatement _
+              (NonEmpty
+                [ Binding _
+                  "f"
+                  (Just
+                    (FunctionSignature _
+                      [ConstructorSignature _ "int"]
+                      (ConstructorSignature _ "int")))
+                  (Just
+                    (LiteralExpression _
+                      (FunctionLiteral
+                        (Just "identity")
+                        [("x", Nothing, Nothing)]
+                        Nothing
+                        (BlockStatement _
+                          [ ReturnStatement _ (Just (IdentifierExpression _ "x"))
+                          ]))))
+                ])
+            ]) -> True
+          _ -> False
 
     specify "'whenever' statement" do
 
@@ -1553,3 +1653,11 @@ evalTestFlags flags source successful = do
 
 pattern NonEmpty :: [a] -> NonEmpty a
 pattern NonEmpty xs <- (NonEmpty.toList -> xs)
+
+pattern IntegerLiteral :: Int -> Literal anno
+pattern IntegerLiteral n
+  <- (\ case {
+      DecimalIntegerLiteral digits
+        -> Just $ readMaybe $ decimalIntegerLiteralString digits;
+      _ -> Nothing;
+    } -> Just (Just n))

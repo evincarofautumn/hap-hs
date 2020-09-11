@@ -18,13 +18,20 @@ import Hap.Language
   , Program(..)
   , Signature(..)
   , Statement(..)
+  , decimalDigitString
   , expressionAnno
   , signatureAnno
   , statementAnno
   )
 import Hap.Parse (lexToken)
 import Hap.ParserMonad (Parser, parseFailure)
-import Hap.Token (Keyword(..), Token(..), SourceSpan(..), tokenAnno)
+import Hap.Token
+  ( DecimalDigit
+  , Keyword(..)
+  , SourceSpan(..)
+  , Token(..)
+  , tokenAnno
+  )
 import Hap.Tokenizer ()
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as Text
@@ -44,8 +51,8 @@ import qualified Data.Text as Text
 -- Primitive Tokens
 --------------------------------------------------------------------------------
 
-  word     { WordToken   $$ }
-  integer  { DigitsToken $$ }
+  word   { WordToken   $$ }
+  digits { DigitsToken $$ }
 
 --------------------------------------------------------------------------------
 -- Symbol Tokens
@@ -61,6 +68,7 @@ import qualified Data.Text as Text
   '+'      { PlusToken               _ }
   ','      { CommaToken              _ }
   '-'      { MinusToken              _ }
+  '->'     { RightArrowToken         _ }
   '.'      { DotToken                _ }
   '/'      { SlashToken              _ }
   ':'      { ColonToken              _ }
@@ -77,6 +85,7 @@ import qualified Data.Text as Text
   '\\'     { BackslashToken          _ }
   ']'      { RightSquareBracketToken _ }
   '^'      { CaretToken              _ }
+  '_'      { UnderscoreToken         _ }
   '{'      { LeftCurlyBraceToken     _ }
   '|'      { PipeToken               _ }
   '}'      { RightCurlyBraceToken    _ }
@@ -86,6 +95,7 @@ import qualified Data.Text as Text
 -- Keyword Tokens
 --------------------------------------------------------------------------------
 
+  -- TODO: Differentiate primary and secondary/contextual-only keywords.
   addKeyword      { KeywordToken (_, AddKeyword)      }
   afterKeyword    { KeywordToken (_, AfterKeyword)    }
   allKeyword      { KeywordToken (_, AllKeyword)      }
@@ -133,8 +143,9 @@ import qualified Data.Text as Text
 -- Precedences
 --------------------------------------------------------------------------------
 
-%nonassoc noElseKeyword
+%nonassoc NO_ELSE
 %nonassoc elseKeyword
+%right word
 
 %%
 
@@ -206,8 +217,12 @@ Program :: { Program SourceSpan }
       { forEachStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
     FunctionStatement :: { Statement SourceSpan }
-      : functionKeyword Identifier ParameterList opt(TypeAnnotation) Statement
-      { functionStatement $1 $2 $3 $4 $5 }
+      : functionKeyword Identifier ParameterList opt(TypeAnnotation)
+        '{' many(Statement) '}'
+      { functionStatement $1 $2 $3 $4 $5 (Right $6) $7 }
+      | functionKeyword Identifier ParameterList opt(TypeAnnotation)
+        '->' Expression ';'
+      { functionStatement $1 $2 $3 $4 $5 (Left $6) $7 }
 
       -- TODO: Preserve source spans of parentheses and separators?
       ParameterList :: { [Binding SourceSpan] }
@@ -218,7 +233,7 @@ Program :: { Program SourceSpan }
 
     IfStatement :: { Statement SourceSpan }
       : ifKeyword '(' Expression ')' Statement
-        %prec noElseKeyword
+        %prec NO_ELSE
         { ifStatement $1 $2 $3 $4 $5 Nothing }
       | ifKeyword '(' Expression ')' Statement ElseClause
         { ifStatement $1 $2 $3 $4 $5 (Just $6) }
@@ -303,10 +318,11 @@ Program :: { Program SourceSpan }
 
   Expression :: { Expression SourceSpan }
     : Boolean            { booleanExpression $1 }
-    | '(' Expression ')' { groupExpression $1 $2 $3 }
-    | Identifier         { identifierExpression $1 }
-    | integer            { integerExpression $1 }
     | Null               { nullExpression $1 }
+    | '(' Expression ')' { groupExpression $1 $2 $3 }
+
+    | Identifier         { identifierExpression $1 }
+    | some(digits)       { integerExpression $1 }
 
     Boolean :: { (SourceSpan, Bool) }
       : trueKeyword  { (tokenAnno $1, True) }
@@ -319,10 +335,10 @@ Program :: { Program SourceSpan }
       IdentifierStart :: { (SourceSpan, Text) }
         : word { $1 }
 
-      -- TODO: Allow numbers.
       IdentifierContinue :: { (SourceSpan, Text) }
         : word           { $1 }
         | ContextualWord { $1 }
+        | digits         { identifierContinueDigits $1 }
 
     Null :: { SourceSpan }
       : nullKeyword  { tokenAnno $1 }
@@ -349,77 +365,42 @@ Program :: { Program SourceSpan }
 
 -- A keyword contextually interpreted as a name part.
 ContextualWord :: { (SourceSpan, Text) }
-  : addWord      { $1 }
-  | afterWord    { $1 }
-  | allWord      { $1 }
-  | asWord       { $1 }
-  | asyncWord    { $1 }
-  | atomicWord   { $1 }
-  | beforeWord   { $1 }
-  | changeWord   { $1 }
-  | eachWord     { $1 }
-  | elseWord     { $1 }
-  | entityWord   { $1 }
-  | everyWord    { $1 }
-  | falseWord    { $1 }
-  | forWord      { $1 }
-  | functionWord { $1 }
-  | hasWord      { $1 }
-  | ifWord       { $1 }
-  | lastWord     { $1 }
-  | longWord     { $1 }
-  | needsWord    { $1 }
-  | nextWord     { $1 }
-  | onWord       { $1 }
-  | redoWord     { $1 }
-  | removeWord   { $1 }
-  | returnWord   { $1 }
-  | setWord      { $1 }
-  | trueWord     { $1 }
-  | untilWord    { $1 }
-  | varWord      { $1 }
-  | whenWord     { $1 }
-  | wheneverWord { $1 }
-  | whereWord    { $1 }
-  | whichWord    { $1 }
-  | whileWord    { $1 }
-
-addWord      : addKeyword      { (tokenAnno $1, "add")      }
-afterWord    : afterKeyword    { (tokenAnno $1, "after")    }
-allWord      : allKeyword      { (tokenAnno $1, "all")      }
-asWord       : asKeyword       { (tokenAnno $1, "as")       }
-asyncWord    : asyncKeyword    { (tokenAnno $1, "async")    }
-atomicWord   : atomicKeyword   { (tokenAnno $1, "atomic")   }
-beforeWord   : beforeKeyword   { (tokenAnno $1, "before")   }
-changeWord   : changeKeyword   { (tokenAnno $1, "change")   }
-eachWord     : eachKeyword     { (tokenAnno $1, "each")     }
-elseWord     : elseKeyword     { (tokenAnno $1, "else")     }
-entityWord   : entityKeyword   { (tokenAnno $1, "entity")   }
-everyWord    : everyKeyword    { (tokenAnno $1, "every")    }
-falseWord    : falseKeyword    { (tokenAnno $1, "false")    }
-forWord      : forKeyword      { (tokenAnno $1, "for")      }
-functionWord : functionKeyword { (tokenAnno $1, "function") }
-hasWord      : hasKeyword      { (tokenAnno $1, "has")      }
-ifWord       : ifKeyword       { (tokenAnno $1, "if")       }
-inWord       : inKeyword       { (tokenAnno $1, "in")       }
-lastWord     : lastKeyword     { (tokenAnno $1, "last")     }
-longWord     : longKeyword     { (tokenAnno $1, "long")     }
-needsWord    : needsKeyword    { (tokenAnno $1, "needs")    }
-nextWord     : nextKeyword     { (tokenAnno $1, "next")     }
-nullWord     : nullKeyword     { (tokenAnno $1, "null")     }
-onWord       : onKeyword       { (tokenAnno $1, "on")       }
-redoWord     : redoKeyword     { (tokenAnno $1, "redo")     }
-removeWord   : removeKeyword   { (tokenAnno $1, "remove")   }
-returnWord   : returnKeyword   { (tokenAnno $1, "return")   }
-setWord      : setKeyword      { (tokenAnno $1, "set")      }
-trueWord     : trueKeyword     { (tokenAnno $1, "true")     }
-untilWord    : untilKeyword    { (tokenAnno $1, "until")    }
-varWord      : varKeyword      { (tokenAnno $1, "var")      }
-whenWord     : whenKeyword     { (tokenAnno $1, "when")     }
-wheneverWord : wheneverKeyword { (tokenAnno $1, "whenever") }
-whereWord    : whereKeyword    { (tokenAnno $1, "where")    }
-whichWord    : whichKeyword    { (tokenAnno $1, "which")    }
-whileWord    : whileKeyword    { (tokenAnno $1, "while")    }
+  : addKeyword      { (tokenAnno $1, "add")      }
+  | afterKeyword    { (tokenAnno $1, "after")    }
+  | allKeyword      { (tokenAnno $1, "all")      }
+  | asKeyword       { (tokenAnno $1, "as")       }
+  | asyncKeyword    { (tokenAnno $1, "async")    }
+  | atomicKeyword   { (tokenAnno $1, "atomic")   }
+  | beforeKeyword   { (tokenAnno $1, "before")   }
+  | changeKeyword   { (tokenAnno $1, "change")   }
+  | eachKeyword     { (tokenAnno $1, "each")     }
+  | elseKeyword     { (tokenAnno $1, "else")     }
+  | entityKeyword   { (tokenAnno $1, "entity")   }
+  | everyKeyword    { (tokenAnno $1, "every")    }
+  | falseKeyword    { (tokenAnno $1, "false")    }
+  | forKeyword      { (tokenAnno $1, "for")      }
+  | functionKeyword { (tokenAnno $1, "function") }
+  | hasKeyword      { (tokenAnno $1, "has")      }
+  | ifKeyword       { (tokenAnno $1, "if")       }
+  | inKeyword       { (tokenAnno $1, "in")       }
+  | lastKeyword     { (tokenAnno $1, "last")     }
+  | longKeyword     { (tokenAnno $1, "long")     }
+  | needsKeyword    { (tokenAnno $1, "needs")    }
+  | nextKeyword     { (tokenAnno $1, "next")     }
+  | nullKeyword     { (tokenAnno $1, "null")     }
+  | onKeyword       { (tokenAnno $1, "on")       }
+  | redoKeyword     { (tokenAnno $1, "redo")     }
+  | removeKeyword   { (tokenAnno $1, "remove")   }
+  | returnKeyword   { (tokenAnno $1, "return")   }
+  | setKeyword      { (tokenAnno $1, "set")      }
+  | trueKeyword     { (tokenAnno $1, "true")     }
+  | untilKeyword    { (tokenAnno $1, "until")    }
+  | varKeyword      { (tokenAnno $1, "var")      }
+  | whenKeyword     { (tokenAnno $1, "when")     }
+  | wheneverKeyword { (tokenAnno $1, "whenever") }
+  | whereKeyword    { (tokenAnno $1, "where")    }
+  | whichKeyword    { (tokenAnno $1, "which")    }
+  | whileKeyword    { (tokenAnno $1, "while")    }
 
 --------------------------------------------------------------------------------
 -- Grammar Utilities
@@ -443,6 +424,11 @@ opt(p)  -- :: { Parser a -> Parser (Maybe a) }
   : p { Just $1 }
   |   { Nothing }
 
+-- Zero or more, right-recursive.
+rmany(p)  -- :: { Parser a -> Parser [a] }
+  : p rmany(p) { $1 : $2 }
+  |            { [] }
+
 -- Zero or more, with separator between.
 sep(s, p)  -- :: { Parser a -> Parser b -> Parser [b] }
   : opt(sep1(s, p)) { maybe [] NonEmpty.toList $1 }
@@ -451,15 +437,22 @@ sep(s, p)  -- :: { Parser a -> Parser b -> Parser [b] }
 sep1(s, p)  -- :: { Parser a -> Parser b -> Parser (NonEmpty b) }
   : p many(snd(s, p)) { $1 :| $2 }
 
--- Zero or more, with separator between and optionally after.
+-- Zero or more, with separator between and optionally after. Right-recursive to
+-- avoid a shift/reduce conflict on the final comma.
+--
 -- TODO: Preserve source span of trailing separator?
 sepEnd(s, p)  -- :: { Parser a -> Parser b -> Parser [b] }
-  : opt(sep1(s, p)) opt(s) { maybe [] NonEmpty.toList $1 }
+  :                  { [] }
+  | p                { [$1] }
+  | p s sepEnd(s, p) { $1 : $3 }
 
--- One or more, with separator between and optionally after.
+-- One or more, with separator between and optionally after. Right-recursive to
+-- avoid a shift/reduce conflict on the final comma.
+--
 -- TODO: Preserve source span of trailing separator?
 sepEnd1(s, p)  -- :: { Parser a -> Parser b -> Parser (NonEmpty b) }
-  : sep1(s, p) opt(s) { $1 }
+  : p                { $1 :| [] }
+  | p s sepEnd(s, p) { $1 :| $3 }
 
 -- Second of two.
 snd(a, b)  -- :: { Parser a -> Parser b -> Parser b }
@@ -607,17 +600,26 @@ functionStatement
   -> (SourceSpan, Identifier)
   -> [Binding SourceSpan]
   -> Maybe (Signature SourceSpan)
+  -> Token SourceSpan
+  -> Either (Expression SourceSpan) [Statement SourceSpan]
+  -> Token SourceSpan
   -> Statement SourceSpan
-  -> Statement SourceSpan
-functionStatement functionKeyword (namePos, name) params returnType body
-  = FunctionStatement pos name params returnType body
+functionStatement functionKeyword (namePos, name) params returnType
+  begin body end
+  = FunctionStatement pos name params returnType
+  $ either (ExpressionStatement bodyPos) (BlockStatement bodyPos) body
   where
     pos = mconcat
       [ tokenAnno functionKeyword
       , namePos
       , foldMap bindingAnno params
       , foldMap signatureAnno returnType
-      , statementAnno body
+      , bodyPos
+      ]
+    bodyPos = mconcat
+      [ tokenAnno begin
+      , either expressionAnno (foldMap statementAnno) body
+      , tokenAnno end
       ]
 
 ifStatement
@@ -930,8 +932,15 @@ identifierParts
   , Identifier (startPart :| continueParts)
   )
 
-integerExpression :: (SourceSpan, Integer) -> Expression SourceSpan
-integerExpression (pos, value) = LiteralExpression pos (IntegerLiteral value)
+identifierContinueDigits
+  :: (SourceSpan, NonEmpty DecimalDigit) -> (SourceSpan, Text)
+identifierContinueDigits (pos, digits)
+  = (pos, Text.pack (decimalDigitString digits))
+
+integerExpression
+  :: NonEmpty (SourceSpan, NonEmpty DecimalDigit) -> Expression SourceSpan
+integerExpression digits
+  = LiteralExpression (foldMap fst digits) (DecimalIntegerLiteral digits)
 
 nullExpression :: SourceSpan -> Expression SourceSpan
 nullExpression pos = LiteralExpression pos NullLiteral

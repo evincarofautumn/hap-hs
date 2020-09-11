@@ -12,6 +12,8 @@ module Hap.Language
   , Statement(..)
   , UnaryOperator(..)
   , Value(..)
+  , decimalDigitString
+  , decimalIntegerLiteralString
   , expressionAnno
   , identifierText
   , nativeFunction
@@ -21,8 +23,9 @@ module Hap.Language
   , statementAnno
   ) where
 
-import Control.Concurrent.STM
-import Control.Monad.IO.Class
+import Control.Concurrent.STM (atomically, writeTChan)
+import Control.Monad (join)
+import Control.Monad.IO.Class (MonadIO(..))
 import Data.Foldable (for_, traverse_)
 import Data.IntMap (IntMap)
 import Data.List (intercalate)
@@ -33,6 +36,7 @@ import Data.Set (Set)
 import Data.Text (Text)
 import GHC.Exts (IsString(..))
 import Hap.Runtime (Env(..))
+import Hap.Token (DecimalDigit, decimalDigitChar)
 import SDL (($=))
 import qualified Data.IntMap as IntMap
 import qualified Data.List.NonEmpty as NonEmpty
@@ -105,7 +109,7 @@ data Statement anno
   | WhenStatement anno !(Expression anno) !(Statement anno)
   | WheneverStatement anno !(Expression anno) !(Statement anno)
   | WhileStatement anno !(Expression anno) !(Statement anno)
-  deriving stock (Eq, Functor, Ord, Show)
+  deriving stock (Eq, Functor, Show)
 
 statementAnno :: Statement anno -> anno
 statementAnno = \ case
@@ -138,7 +142,7 @@ data Binding anno = Binding
   , bindingSignature   :: !(Maybe (Signature anno))
   , bindingInitializer :: !(Maybe (Expression anno))
   }
-  deriving stock (Eq, Functor, Ord, Show)
+  deriving stock (Eq, Functor, Show)
 
 data Expression anno
   = LiteralExpression anno !(Literal anno)
@@ -153,7 +157,7 @@ data Expression anno
   | UnaryExpression anno !UnaryOperator !(Expression anno)
   | BinaryExpression anno !BinaryOperator !(Expression anno) !(Expression anno)
   | IfExpression anno !(Expression anno) !(Expression anno) !(Expression anno)
-  deriving stock (Eq, Functor, Ord, Show)
+  deriving stock (Eq, Functor, Show)
 
 expressionAnno :: Expression anno -> anno
 expressionAnno = \ case
@@ -168,21 +172,29 @@ expressionAnno = \ case
   BinaryExpression     anno _ _ _ -> anno
   IfExpression         anno _ _ _ -> anno
 
+-- TODO: Keep structured literals around here instead of just values.
 data Literal anno
   = BooleanLiteral !Bool
+  | DecimalIntegerLiteral !(NonEmpty (anno, NonEmpty DecimalDigit))
   | FloatLiteral !Double
-  | IntegerLiteral !Integer
-  | TextLiteral !Text
-  | NullLiteral
-  | ListLiteral [Expression anno]
-  | MapLiteral [(Expression anno, Expression anno)]
-  | SetLiteral [Expression anno]
   | FunctionLiteral
     !(Maybe Identifier)
     [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
     !(Maybe (Signature anno))
     !(Statement anno)
-  deriving stock (Eq, Functor, Ord, Show)
+  | ListLiteral [Expression anno]
+  | MapLiteral [(Expression anno, Expression anno)]
+  | NullLiteral
+  | SetLiteral [Expression anno]
+  | TextLiteral !Text
+  deriving stock (Eq, Functor, Show)
+
+decimalDigitString :: NonEmpty DecimalDigit -> String
+decimalDigitString = fmap decimalDigitChar . NonEmpty.toList
+
+decimalIntegerLiteralString
+  :: NonEmpty (anno, NonEmpty DecimalDigit) -> String
+decimalIntegerLiteralString = decimalDigitString . join . fmap snd
 
 data UnaryOperator
   = UnaryEach
@@ -190,7 +202,7 @@ data UnaryOperator
   | UnaryMinus
   | UnaryNot
   | UnaryPlus
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Show)
 
 -- Note [Each and Every]:
 --
@@ -259,13 +271,13 @@ data BinaryOperator
   | BinaryImplies
   -- Assignment
   | BinaryAssign
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Show)
 
 data Signature anno
   = ApplicationSignature anno !(Signature anno) [Signature anno]
   | ConstructorSignature anno !Identifier
   | FunctionSignature anno [Signature anno] !(Signature anno)
-  deriving stock (Eq, Functor, Ord, Show)
+  deriving stock (Eq, Functor, Show)
 
 signatureAnno :: Signature anno -> anno
 signatureAnno = \ case
@@ -806,7 +818,9 @@ data Value
     !(Statement anno)
     !(Hap IO ())
 -}
+  deriving stock (Eq, Ord, Show)
 
+{-
 instance Eq Value where
   BooleanValue a == BooleanValue b = a == b
   FloatValue a == FloatValue b = a == b
@@ -849,7 +863,9 @@ instance Ord Value where
       , " and "
       , show b
       ]
+-}
 
+{-
 instance Show Value where
   show = \ case
     BooleanValue value -> if value then "true" else "false"
@@ -900,6 +916,7 @@ instance Show Value where
             Just expression -> concat [" = ", show expression]
             Nothing -> ""
           ]
+-}
 -}
 
 newtype NativeId = NativeId Int

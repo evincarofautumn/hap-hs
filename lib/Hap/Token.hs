@@ -1,7 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Hap.Token where
+module Hap.Token
+  ( Column(..)
+  , DecimalDigit(..)
+  , Keyword(..)
+  , Offset(..)
+  , Row(..)
+  , SourcePosition(..)
+  , SourceSpan(..)
+  , Token(..)
+  , decimalDigitChar
+  , tokenAnno
+  ) where
 
+import Data.Char (ord)
+import Data.Ix (inRange)
+import Data.List.NonEmpty (NonEmpty)
 import Data.Text (Text)
 import Data.Text.Prettyprint.Doc (Pretty(..))
 import Hap.Data.Monoid (Maximum(..), Minimum(..))
@@ -85,8 +99,8 @@ data Token anno
   -- | A (contextual) keyword.
   | KeywordToken (anno, Keyword)
 
-  -- | An integer literal part.
-  | DigitsToken (anno, Integer)
+  -- | A number part.
+  | DigitsToken (anno, NonEmpty DecimalDigit)
 
   -- | @(@
   | LeftParenthesisToken anno
@@ -117,6 +131,9 @@ data Token anno
 
   -- | @-@
   | MinusToken anno
+
+  -- | @->@
+  | RightArrowToken anno
 
   -- | @.@
   | DotToken anno
@@ -166,6 +183,9 @@ data Token anno
   -- | @^@
   | CaretToken anno
 
+  -- | @_@
+  | UnderscoreToken anno
+
   -- | @{@
   | LeftCurlyBraceToken anno
 
@@ -187,7 +207,7 @@ instance Pretty (Token anno) where
   pretty = \ case
     WordToken (_, word)       -> pretty word
     KeywordToken (_, keyword) -> pretty keyword
-    DigitsToken (_, value)    -> pretty value
+    DigitsToken (_, digits)   -> foldMap pretty digits
     LeftParenthesisToken{}    -> "("
     RightParenthesisToken{}   -> ")"
     BangToken{}               -> "!"
@@ -198,6 +218,7 @@ instance Pretty (Token anno) where
     PlusToken{}               -> "+"
     CommaToken{}              -> ","
     MinusToken{}              -> "-"
+    RightArrowToken{}         -> "->"
     DotToken{}                -> "."
     SlashToken{}              -> "/"
     ColonToken{}              -> ":"
@@ -214,11 +235,32 @@ instance Pretty (Token anno) where
     BackslashToken{}          -> "\\"
     RightSquareBracketToken{} -> "]"
     CaretToken{}              -> "^"
+    UnderscoreToken{}         -> "_"
     LeftCurlyBraceToken{}     -> "{"
     PipeToken{}               -> "|"
     RightCurlyBraceToken{}    -> "}"
     TildeToken{}              -> "~"
     EofToken                  -> "<end of file>"
+
+newtype DecimalDigit = DecimalDigit Int
+  deriving stock (Eq, Show)
+
+decimalDigitChar :: DecimalDigit -> Char
+decimalDigitChar = toEnum . (+ ord '0') . fromEnum
+
+instance Bounded DecimalDigit where
+  minBound = DecimalDigit 0
+  maxBound = DecimalDigit 9
+
+instance Enum DecimalDigit where
+  fromEnum (DecimalDigit x) = x
+  toEnum x
+    | inRange (0, 9) x = DecimalDigit x
+    | otherwise = error
+      $ "toEnum: decimal digit out of range (" <> show x <> ")"
+
+instance Pretty DecimalDigit where
+  pretty = pretty . fromEnum
 
 data Keyword
   = AddKeyword
@@ -329,9 +371,10 @@ tokenAnno = \ case
   BackslashToken          anno      -> anno
   RightSquareBracketToken anno      -> anno
   CaretToken              anno      -> anno
+  UnderscoreToken         anno      -> anno
   LeftCurlyBraceToken     anno      -> anno
   PipeToken               anno      -> anno
   RightCurlyBraceToken    anno      -> anno
   TildeToken              anno      -> anno
-  -- TODO: Use proper error reporting.
+  -- TODO: Use proper error reporting or remove partiality here.
   EofToken                          -> error "cannot get annotation from end of file"

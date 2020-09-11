@@ -7,8 +7,9 @@ module Hap.Compiler
   , newEmptyContext
   ) where
 
-import Control.Monad (void, when)
+import Control.Monad (join, void, when)
 import Control.Monad.IO.Class
+import Data.Char (ord)
 import Data.Fixed (mod')
 import Data.IORef
 import Data.List ((\\), foldl', intersect, union)
@@ -17,6 +18,7 @@ import Data.Map (Map)
 import Data.Traversable (for)
 import Hap.Language
 import Hap.Runtime
+import Text.Read (readMaybe)
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -196,10 +198,17 @@ compileExpression
 compileExpression context expression = case expression of
   LiteralExpression _pos literal -> case literal of
     BooleanLiteral value -> pure $ pure $ BooleanValue value
+    DecimalIntegerLiteral parts
+      -> pure $ pure $ IntegerValue value
+      where
+        digits = fmap (toEnum . (+ ord '0') . fromEnum)
+          $ NonEmpty.toList $ join $ snd <$> parts
+        value = case readMaybe digits of
+          Just x -> x
+          -- TODO: Use proper error reporting or remove partiality.
+          Nothing -> error
+            "internal error: non-digits in decimal integer literal"
     FloatLiteral value -> pure $ pure $ FloatValue value
-    IntegerLiteral value -> pure $ pure $ IntegerValue value
-    TextLiteral value -> pure $ pure $ TextValue value
-    NullLiteral -> pure $ pure NullValue
     ListLiteral elements -> do
       compiledElements <- traverse (compileExpression context) elements
       pure do
@@ -215,11 +224,14 @@ compileExpression context expression = case expression of
           <$> compileExpression context key
           <*> compileExpression context value
         evalPair (key, value) = (,) <$> key <*> value
+    NullLiteral -> pure $ pure NullValue
     SetLiteral elements -> do
       compiledElements <- traverse (compileExpression context) elements
       pure do
         elementValues <- sequence compiledElements
         pure $ SetValue $ Set.fromList elementValues
+    TextLiteral value -> pure $ pure $ TextValue value
+
 {-
     FunctionLiteral name parameters result body -> do
       compiledBody <- compileStatement context body
