@@ -1523,110 +1523,127 @@ spec = do
             ]) -> True
           _ -> False
 
-    specify "'whenever' statement" do
+    describe "'whenever' statement" do
 
-      parseTest "whenever (score > high_score)\n\tshow_high_score();"
-        \ program -> case program of
-        Right (Program
-          [ WheneverStatement _
-            (BinaryExpression _ BinaryGreater
-              (IdentifierExpression _ "score")
-              (IdentifierExpression _ "high_score"))
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "show_high_score")
-                []))
-          ]) -> True
-        _ -> False
+      specify "basic" do
+        parseTest "whenever (score > high_score)\n\tshow_high_score();"
+          \ program -> case program of
+          Right (Program
+            [ WheneverStatement _
+              (BinaryExpression _ BinaryGreater
+                (IdentifierExpression _ "score")
+                (IdentifierExpression _ "high_score"))
+              (ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "show_high_score")
+                  []))
+            ]) -> True
+          _ -> False
 
-    specify "'while' statement" do
+    describe "'while' statement" do
 
-      parseTest "while (true)\n\tplay();"
-        \ program -> case program of
-        Right (Program
-          [ WhileStatement _
-            (LiteralExpression _ (BooleanLiteral True))
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "play")
-                []))
-          ]) -> True
-        _ -> False
+      specify "basic" do
+        parseTest "while (true)\n\tplay();"
+          \ program -> case program of
+          Right (Program
+            [ WhileStatement _
+              (LiteralExpression _ (BooleanLiteral True))
+              (ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "play")
+                  []))
+            ]) -> True
+          _ -> False
 
   describe "evaluates" do
 
-    specify "basic output" do
+    describe "basic output" do
 
-      evalTest "trace (\"hello\");" (== "\"hello\"\n")
+      specify "string" do
+        evalTest "trace (\"hello\");" (== "\"hello\"\n")
 
-      evalTest "trace (2 + 2);" (== "4\n")
+      specify "integer" do
+        evalTest "trace (2 + 2);" (== "4\n")
 
-    specify "literals" do
+    describe "literals" do
 
-      evalTest "trace (true);" (== "true\n")
+      specify "boolean true" do
+        evalTest "trace (true);" (== "true\n")
 
-      evalTest "trace (false);" (== "false\n")
+      specify "boolean false" do
+        evalTest "trace (false);" (== "false\n")
 
-      evalTest "trace (3.14);" (== "3.14\n")
+      specify "float" do
+        evalTest "trace (3.14);" (== "3.14\n")
 
-      evalTest "trace (42);" (== "42\n")
+      specify "integer" do
+        evalTest "trace (42);" (== "42\n")
 
-      evalTest "trace (\"test\");" (== "\"test\"\n")
+      specify "text" do
+        evalTest "trace (\"test\");" (== "\"test\"\n")
 
-      evalTest "trace (null);" (== "null\n")
+      specify "null" do
+        evalTest "trace (null);" (== "null\n")
 
-      evalTest "trace ([1, 2, 3]);" (== "[1, 2, 3]\n")
+      specify "list" do
+        evalTest "trace ([1, 2, 3]);" (== "[1, 2, 3]\n")
 
-      evalTest "trace ({});" (== "{  }\n")
+      specify "empty" do
+        evalTest "trace ({});" (== "{  }\n")
 
-      evalTest "trace ({ thing1: \"text\", thing2: 20 });" (== "{ \"thing1\": \"text\", \"thing2\": 20 }\n")
+      specify "map" do
+        evalTest "trace ({ thing1: \"text\", thing2: 20 });" (== "{ \"thing1\": \"text\", \"thing2\": 20 }\n")
 
-      evalTest "trace ({ \"red\", \"green\", \"blue\" });" (== "{ \"blue\", \"green\", \"red\" }\n")
+      specify "set" do
+        evalTest "trace ({ \"red\", \"green\", \"blue\" });" (== "{ \"blue\", \"green\", \"red\" }\n")
 
-    specify "'on set' statement" do
+    describe "'on set' statement" do
 
-      evalTest "\
-        \var x = 0;\n\
-        \on set (x) output (\"x was set to \", x, \"\\n\");\n\
-        \x <- 0;\n\
-        \x <- 1;\n\
-        \x <- 0;\n\
-        \\&"
-        (== "\
-          \x was set to 0\n\
-          \x was set to 1\n\
-          \x was set to 0\n\
-          \\&")
+      specify "single" do
+        evalTest "\
+          \var x = 0;\n\
+          \on set (x) output (\"x was set to \", x, \"\\n\");\n\
+          \x <- 0;\n\
+          \x <- 1;\n\
+          \x <- 0;\n\
+          \\&"
+          (== "\
+            \x was set to 0\n\
+            \x was set to 1\n\
+            \x was set to 0\n\
+            \\&")
 
-    specify "'on change' statement" do
+    describe "'on change' statement" do
 
-      evalTest "\
-        \var x = 0;\n\
-        \on change (x) output (\"x was changed to \", x, \"\\n\");\n\
-        \x <- 0;\n\
-        \x <- 1;\n\
-        \x <- 0;\n\
-        \\&"
-        (== "\
-          \x was changed to 1\n\
-          \x was changed to 0\n\
-          \\&")
+      specify "single" do
+        evalTest "\
+          \var x = 0;\n\
+          \on change (x) output (\"x was changed to \", x, \"\\n\");\n\
+          \x <- 0;\n\
+          \x <- 1;\n\
+          \x <- 0;\n\
+          \\&"
+          (== "\
+            \x was changed to 1\n\
+            \x was changed to 0\n\
+            \\&")
 
-    specify "'whenever' statement" do
+    describe "'whenever' statement" do
 
-      evalTest "\
-       \var x = 1;\n\
-       \whenever (x = 2) { output (\"beep\\n\"); }\n\
-       \x <- 3;\n\
-       \x <- 2;\n\
-       \x <- 3;\n\
-       \x <- 2;\n\
-       \x <- 2;\n\
-       \\&"
-       (== "\
-         \beep\n\
-         \beep\n\
-         \\&")
+      specify "basic" do
+        evalTest "\
+         \var x = 1;\n\
+         \whenever (x = 2) { output (\"beep\\n\"); }\n\
+         \x <- 3;\n\
+         \x <- 2;\n\
+         \x <- 3;\n\
+         \x <- 2;\n\
+         \x <- 2;\n\
+         \\&"
+         (== "\
+           \beep\n\
+           \beep\n\
+           \\&")
 
 parseTest :: String -> (Either ParseError (Program SourceSpan) -> Bool) -> IO ()
 parseTest source successful = do
