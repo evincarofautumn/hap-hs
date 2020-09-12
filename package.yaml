@@ -44,6 +44,7 @@ library:
   - Hap.Parser
   - Hap.ParserMonad
   - Hap.ParserWrapper
+  - Hap.Pretty
   - Hap.Runtime
   - Hap.Runtime.Errors
   - Hap.Runtime.Types

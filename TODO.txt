@@ -4,3 +4,4 @@ Update links in Haddock docs
 Postfix 'qualified'
 Move 'Token' to separate module from Lex
 Use 'DerivingStrategies' everywhere
+%errorhandlertype explist

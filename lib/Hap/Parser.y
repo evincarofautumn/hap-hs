@@ -33,12 +33,13 @@ import qualified Hap.Token as Token
 
 }
 
-%name      programParser Program
-%name      tokensParser Tokens
-%tokentype { Token }
-%monad     { Parser }
-%lexer     { lexToken } { Token.EofToken }
-%error     { parseFailure }
+%name             programParser Program
+%name             tokensParser Tokens
+%tokentype        { Token }
+%monad            { Parser }
+%lexer            { lexToken } { Token.EofToken }
+%error            { parseFailure }
+%errorhandlertype explist
 
 %token
 
