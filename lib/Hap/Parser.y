@@ -11,13 +11,8 @@ import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Semigroup (sconcat)
 import Data.Text (Text)
 import Hap.Language
-  ( Binding(..)
-  , Expression(..)
-  , Identifier(..)
-  , Literal(..)
-  , Program(..)
-  , Signature(..)
-  , Statement(..)
+  ( Identifier(..)
+  , bindingAnno
   , decimalDigitString
   , expressionAnno
   , signatureAnno
@@ -29,20 +24,20 @@ import Hap.Token
   ( DecimalDigit
   , Keyword(..)
   , SourceSpan(..)
-  , Token(..)
   , tokenAnno
   )
-import Hap.Tokenizer ()
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as Text
+import qualified Hap.Language as Language
+import qualified Hap.Token as Token
 
 }
 
 %name      programParser Program
 %name      tokensParser Tokens
-%tokentype { Token SourceSpan }
+%tokentype { Token }
 %monad     { Parser }
-%lexer     { lexToken } { EofToken }
+%lexer     { lexToken } { Token.EofToken }
 %error     { parseFailure }
 
 %token
@@ -51,87 +46,87 @@ import qualified Data.Text as Text
 -- Primitive Tokens
 --------------------------------------------------------------------------------
 
-  word   { WordToken   $$ }
-  digits { DigitsToken $$ }
+  word   { Token.WordToken   $$ }
+  digits { Token.DigitsToken $$ }
 
 --------------------------------------------------------------------------------
 -- Symbol Tokens
 --------------------------------------------------------------------------------
 
-  '('      { LeftParenthesisToken    _ }
-  ')'      { RightParenthesisToken   _ }
-  '!'      { BangToken               _ }
-  '#'      { NumberToken             _ }
-  '%'      { PercentToken            _ }
-  '&'      { AndToken                _ }
-  '*'      { StarToken               _ }
-  '+'      { PlusToken               _ }
-  ','      { CommaToken              _ }
-  '-'      { MinusToken              _ }
-  '->'     { RightArrowToken         _ }
-  '.'      { DotToken                _ }
-  '/'      { SlashToken              _ }
-  ':'      { ColonToken              _ }
-  ';'      { SemicolonToken          _ }
-  '<'      { LessThanToken           _ }
-  '<='     { LessThanOrEqualToken    _ }
-  '<>'     { NotEqualToken           _ }
-  '='      { EqualToken              _ }
-  '>'      { GreaterThanToken        _ }
-  '>='     { GreaterThanOrEqualToken _ }
-  '?'      { QuestionToken           _ }
-  '@'      { AtToken                 _ }
-  '['      { LeftSquareBracketToken  _ }
-  '\\'     { BackslashToken          _ }
-  ']'      { RightSquareBracketToken _ }
-  '^'      { CaretToken              _ }
-  '_'      { UnderscoreToken         _ }
-  '{'      { LeftCurlyBraceToken     _ }
-  '|'      { PipeToken               _ }
-  '}'      { RightCurlyBraceToken    _ }
-  '~'      { TildeToken              _ }
+  '('  { Token.LeftParenthesisToken    _ }
+  ')'  { Token.RightParenthesisToken   _ }
+  '!'  { Token.BangToken               _ }
+  '#'  { Token.NumberToken             _ }
+  '%'  { Token.PercentToken            _ }
+  '&'  { Token.AndToken                _ }
+  '*'  { Token.StarToken               _ }
+  '+'  { Token.PlusToken               _ }
+  ','  { Token.CommaToken              _ }
+  '-'  { Token.MinusToken              _ }
+  '->' { Token.RightArrowToken         _ }
+  '.'  { Token.DotToken                _ }
+  '/'  { Token.SlashToken              _ }
+  ':'  { Token.ColonToken              _ }
+  ';'  { Token.SemicolonToken          _ }
+  '<'  { Token.LessThanToken           _ }
+  '<=' { Token.LessThanOrEqualToken    _ }
+  '<>' { Token.NotEqualToken           _ }
+  '='  { Token.EqualToken              _ }
+  '>'  { Token.GreaterThanToken        _ }
+  '>=' { Token.GreaterThanOrEqualToken _ }
+  '?'  { Token.QuestionToken           _ }
+  '@'  { Token.AtToken                 _ }
+  '['  { Token.LeftSquareBracketToken  _ }
+  '\\' { Token.BackslashToken          _ }
+  ']'  { Token.RightSquareBracketToken _ }
+  '^'  { Token.CaretToken              _ }
+  '_'  { Token.UnderscoreToken         _ }
+  '{'  { Token.LeftCurlyBraceToken     _ }
+  '|'  { Token.PipeToken               _ }
+  '}'  { Token.RightCurlyBraceToken    _ }
+  '~'  { Token.TildeToken              _ }
 
 --------------------------------------------------------------------------------
 -- Keyword Tokens
 --------------------------------------------------------------------------------
 
   -- TODO: Differentiate primary and secondary/contextual-only keywords.
-  addKeyword      { KeywordToken (_, AddKeyword)      }
-  afterKeyword    { KeywordToken (_, AfterKeyword)    }
-  allKeyword      { KeywordToken (_, AllKeyword)      }
-  asKeyword       { KeywordToken (_, AsKeyword)       }
-  asyncKeyword    { KeywordToken (_, AsyncKeyword)    }
-  atomicKeyword   { KeywordToken (_, AtomicKeyword)   }
-  beforeKeyword   { KeywordToken (_, BeforeKeyword)   }
-  changeKeyword   { KeywordToken (_, ChangeKeyword)   }
-  eachKeyword     { KeywordToken (_, EachKeyword)     }
-  elseKeyword     { KeywordToken (_, ElseKeyword)     }
-  entityKeyword   { KeywordToken (_, EntityKeyword)   }
-  everyKeyword    { KeywordToken (_, EveryKeyword)    }
-  falseKeyword    { KeywordToken (_, FalseKeyword)    }
-  forKeyword      { KeywordToken (_, ForKeyword)      }
-  functionKeyword { KeywordToken (_, FunctionKeyword) }
-  hasKeyword      { KeywordToken (_, HasKeyword)      }
-  ifKeyword       { KeywordToken (_, IfKeyword)       }
-  inKeyword       { KeywordToken (_, InKeyword)       }
-  lastKeyword     { KeywordToken (_, LastKeyword)     }
-  longKeyword     { KeywordToken (_, LongKeyword)     }
-  needsKeyword    { KeywordToken (_, NeedsKeyword)    }
-  nextKeyword     { KeywordToken (_, NextKeyword)     }
-  nullKeyword     { KeywordToken (_, NullKeyword)     }
-  onKeyword       { KeywordToken (_, OnKeyword)       }
-  redoKeyword     { KeywordToken (_, RedoKeyword)     }
-  removeKeyword   { KeywordToken (_, RemoveKeyword)   }
-  returnKeyword   { KeywordToken (_, ReturnKeyword)   }
-  setKeyword      { KeywordToken (_, SetKeyword)      }
-  trueKeyword     { KeywordToken (_, TrueKeyword)     }
-  untilKeyword    { KeywordToken (_, UntilKeyword)    }
-  varKeyword      { KeywordToken (_, VarKeyword)      }
-  whenKeyword     { KeywordToken (_, WhenKeyword)     }
-  wheneverKeyword { KeywordToken (_, WheneverKeyword) }
-  whereKeyword    { KeywordToken (_, WhereKeyword)    }
-  whichKeyword    { KeywordToken (_, WhichKeyword)    }
-  whileKeyword    { KeywordToken (_, WhileKeyword)    }
+  add      { Token.KeywordToken (_, AddKeyword)      }
+  after    { Token.KeywordToken (_, AfterKeyword)    }
+  all      { Token.KeywordToken (_, AllKeyword)      }
+  as       { Token.KeywordToken (_, AsKeyword)       }
+  async    { Token.KeywordToken (_, AsyncKeyword)    }
+  atomic   { Token.KeywordToken (_, AtomicKeyword)   }
+  before   { Token.KeywordToken (_, BeforeKeyword)   }
+  change   { Token.KeywordToken (_, ChangeKeyword)   }
+  each     { Token.KeywordToken (_, EachKeyword)     }
+  else     { Token.KeywordToken (_, ElseKeyword)     }
+  entity   { Token.KeywordToken (_, EntityKeyword)   }
+  every    { Token.KeywordToken (_, EveryKeyword)    }
+  false    { Token.KeywordToken (_, FalseKeyword)    }
+  for      { Token.KeywordToken (_, ForKeyword)      }
+  function { Token.KeywordToken (_, FunctionKeyword) }
+  has      { Token.KeywordToken (_, HasKeyword)      }
+  if       { Token.KeywordToken (_, IfKeyword)       }
+  in       { Token.KeywordToken (_, InKeyword)       }
+  last     { Token.KeywordToken (_, LastKeyword)     }
+  long     { Token.KeywordToken (_, LongKeyword)     }
+  needs    { Token.KeywordToken (_, NeedsKeyword)    }
+  next     { Token.KeywordToken (_, NextKeyword)     }
+  null     { Token.KeywordToken (_, NullKeyword)     }
+  on       { Token.KeywordToken (_, OnKeyword)       }
+  redo     { Token.KeywordToken (_, RedoKeyword)     }
+  remove   { Token.KeywordToken (_, RemoveKeyword)   }
+  return   { Token.KeywordToken (_, ReturnKeyword)   }
+  set      { Token.KeywordToken (_, SetKeyword)      }
+  true     { Token.KeywordToken (_, TrueKeyword)     }
+  until    { Token.KeywordToken (_, UntilKeyword)    }
+  var      { Token.KeywordToken (_, VarKeyword)      }
+  when     { Token.KeywordToken (_, WhenKeyword)     }
+  whenever { Token.KeywordToken (_, WheneverKeyword) }
+  where    { Token.KeywordToken (_, WhereKeyword)    }
+  which    { Token.KeywordToken (_, WhichKeyword)    }
+  while    { Token.KeywordToken (_, WhileKeyword)    }
 
 --------------------------------------------------------------------------------
 -- Any Token (MUST BE LAST)
@@ -144,7 +139,7 @@ import qualified Data.Text as Text
 --------------------------------------------------------------------------------
 
 %nonassoc NO_ELSE
-%nonassoc elseKeyword
+%nonassoc else
 %right word
 
 %%
@@ -154,14 +149,14 @@ import qualified Data.Text as Text
 --------------------------------------------------------------------------------
 
 -- Parse just a list of tokens, for debugging.
-Tokens :: { [Token SourceSpan] }
+Tokens :: { [Token] }
   : many(token) { $1 }
 
 -- Main entry point.
-Program :: { Program SourceSpan }
-  : many(Statement) { Program $1 }
+Program :: { Program }
+  : many(Statement) { Language.Program $1 }
 
-  Statement :: { Statement SourceSpan }
+  Statement :: { Statement }
     : AtomicStatement     { $1 }
     | AfterStatement      { $1 }
     | AsLongAsStatement   { $1 }
@@ -186,137 +181,137 @@ Program :: { Program SourceSpan }
     -- TODO: Check whether this must appear last.
     | ExpressionStatement { $1 }
 
-    AtomicStatement :: { Statement SourceSpan }
-      : atomicKeyword Statement
+    AtomicStatement :: { Statement }
+      : atomic Statement
       { atomicStatement $1 $2 }
 
-    AfterStatement :: { Statement SourceSpan }
-      : afterKeyword '(' Expression ')' Statement
+    AfterStatement :: { Statement }
+      : after '(' Expression ')' Statement
       { afterStatement $1 $2 $3 $4 $5 }
 
     AsLongAsStatement
-      : asKeyword longKeyword asKeyword '(' Expression ')' Statement
+      : as long as '(' Expression ')' Statement
       { asLongAsStatement $1 $2 $3 $4 $5 $6 $7 }
 
-    BlockStatement :: { Statement SourceSpan }
+    BlockStatement :: { Statement }
       : '{' many(Statement) '}'
       { blockStatement $1 $2 $3 }
 
-    EmptyStatement :: { Statement SourceSpan }
+    EmptyStatement :: { Statement }
       : ';'
       { emptyStatement $1 }
 
     -- TODO: See note [Name-Expression Separator in Quantifiers].
-    ForAllStatement :: { Statement SourceSpan }
-      : forKeyword allKeyword '(' Identifier ':' Expression ')' Statement
+    ForAllStatement :: { Statement }
+      : for all '(' Identifier ':' Expression ')' Statement
       { forAllStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
     -- TODO: See note [Name-Expression Separator in Quantifiers].
-    ForEachStatement :: { Statement SourceSpan }
-      : forKeyword eachKeyword '(' Identifier ':' Expression ')' Statement
+    ForEachStatement :: { Statement }
+      : for each '(' Identifier ':' Expression ')' Statement
       { forEachStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
-    FunctionStatement :: { Statement SourceSpan }
-      : functionKeyword Identifier ParameterList opt(TypeAnnotation)
+    FunctionStatement :: { Statement }
+      : function Identifier ParameterList opt(TypeAnnotation)
         '{' many(Statement) '}'
       { functionStatement $1 $2 $3 $4 $5 (Right $6) $7 }
-      | functionKeyword Identifier ParameterList opt(TypeAnnotation)
+      | function Identifier ParameterList opt(TypeAnnotation)
         '->' Expression ';'
       { functionStatement $1 $2 $3 $4 $5 (Left $6) $7 }
 
       -- TODO: Preserve source spans of parentheses and separators?
-      ParameterList :: { [Binding SourceSpan] }
+      ParameterList :: { [Binding] }
         : '(' sepEnd(',', Binding) ')'
         { $2 }
 
       -- See [Binding].
 
-    IfStatement :: { Statement SourceSpan }
-      : ifKeyword '(' Expression ')' Statement
+    IfStatement :: { Statement }
+      : if '(' Expression ')' Statement
         %prec NO_ELSE
         { ifStatement $1 $2 $3 $4 $5 Nothing }
-      | ifKeyword '(' Expression ')' Statement ElseClause
+      | if '(' Expression ')' Statement ElseClause
         { ifStatement $1 $2 $3 $4 $5 (Just $6) }
 
-      ElseClause :: { (SourceSpan, Statement SourceSpan) }
-        : elseKeyword Statement
+      ElseClause :: { (SourceSpan, Statement) }
+        : else Statement
         { elseClause $1 $2 }
 
-    LastStatement :: { Statement SourceSpan }
-      : lastKeyword opt(Identifier) ';'
+    LastStatement :: { Statement }
+      : last opt(Identifier) ';'
       { lastStatement $1 $2 $3 }
 
-    NextStatement :: { Statement SourceSpan }
-      : nextKeyword opt(Identifier) ';'
+    NextStatement :: { Statement }
+      : next opt(Identifier) ';'
       { nextStatement $1 $2 $3 }
 
     -- TODO: See note [Name-Expression Separator in Quantifiers].
-    OnAddStatement :: { Statement SourceSpan }
-      : onKeyword addKeyword '(' Identifier ':' Expression ')' Statement
+    OnAddStatement :: { Statement }
+      : on add '(' Identifier ':' Expression ')' Statement
       { onAddStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
-    OnChangeStatement :: { Statement SourceSpan }
-      : onKeyword changeKeyword '(' sepEnd1(',', Identifier) ')' Statement
+    OnChangeStatement :: { Statement }
+      : on change '(' sepEnd1(',', Identifier) ')' Statement
       { onChangeStatement $1 $2 $3 $4 $5 $6 }
 
     -- TODO: See note [Name-Expression Separator in Quantifiers].
-    OnRemoveStatement :: { Statement SourceSpan }
-      : onKeyword removeKeyword '(' Identifier ':' Expression ')' Statement
+    OnRemoveStatement :: { Statement }
+      : on remove '(' Identifier ':' Expression ')' Statement
       { onRemoveStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
-    OnSetStatement :: { Statement SourceSpan }
-      : onKeyword setKeyword '(' sepEnd1(',', Identifier) ')' Statement
+    OnSetStatement :: { Statement }
+      : on set '(' sepEnd1(',', Identifier) ')' Statement
       { onSetStatement $1 $2 $3 $4 $5 $6 }
 
-    RedoStatement :: { Statement SourceSpan }
-      : redoKeyword opt(Identifier) ';'
+    RedoStatement :: { Statement }
+      : redo opt(Identifier) ';'
       { redoStatement $1 $2 $3 }
 
-    ReturnStatement :: { Statement SourceSpan }
-      : returnKeyword opt(Expression) ';'
+    ReturnStatement :: { Statement }
+      : return opt(Expression) ';'
       { returnStatement $1 $2 $3 }
 
-    VarStatement :: { Statement SourceSpan }
-      : varKeyword sepEnd1(',', Binding) ';'
+    VarStatement :: { Statement }
+      : var sepEnd1(',', Binding) ';'
       { varStatement $1 $2 $3 }
 
       -- See [Binding].
 
-    WhenStatement :: { Statement SourceSpan }
-      : whenKeyword '(' Expression ')' Statement
+    WhenStatement :: { Statement }
+      : when '(' Expression ')' Statement
       { whenStatement $1 $2 $3 $4 $5 }
 
-    WheneverStatement :: { Statement SourceSpan }
-      : wheneverKeyword '(' Expression ')' Statement
+    WheneverStatement :: { Statement }
+      : whenever '(' Expression ')' Statement
       { wheneverStatement $1 $2 $3 $4 $5 }
 
-    WhileStatement :: { Statement SourceSpan }
-      : whileKeyword '(' Expression ')' Statement
+    WhileStatement :: { Statement }
+      : while '(' Expression ')' Statement
       { whileStatement $1 $2 $3 $4 $5 }
 
-    ExpressionStatement :: { Statement SourceSpan }
+    ExpressionStatement :: { Statement }
       : Expression ';'
       { expressionStatement $1 $2 }
 
       -- See [Expression].
 
   Binding
-    :: { Binding SourceSpan }
+    :: { Binding }
     : Identifier opt(TypeAnnotation) opt(Initializer)
     { binding $1 $2 $3 }
 
   -- TODO: Preserve source span of colon.
   TypeAnnotation
-    :: { Signature SourceSpan }
+    :: { Signature }
     : ':' Signature { $2 }
 
   -- TODO: Preserve source span of equals.
   -- TODO: Decide on equals symbol for initializer.
   Initializer
-    :: { Expression SourceSpan }
+    :: { Expression }
     : '=' Expression { $2 }
 
-  Expression :: { Expression SourceSpan }
+  Expression :: { Expression }
     : Boolean            { booleanExpression $1 }
     | Null               { nullExpression $1 }
     | '(' Expression ')' { groupExpression $1 $2 $3 }
@@ -325,8 +320,8 @@ Program :: { Program SourceSpan }
     | some(digits)       { integerExpression $1 }
 
     Boolean :: { (SourceSpan, Bool) }
-      : trueKeyword  { (tokenAnno $1, True) }
-      | falseKeyword { (tokenAnno $1, False) }
+      : true  { (tokenAnno $1, True) }
+      | false { (tokenAnno $1, False) }
 
     Identifier :: { (SourceSpan, Identifier) }
       : IdentifierStart many(IdentifierContinue)
@@ -341,14 +336,14 @@ Program :: { Program SourceSpan }
         | digits         { identifierContinueDigits $1 }
 
     Null :: { SourceSpan }
-      : nullKeyword  { tokenAnno $1 }
+      : null  { tokenAnno $1 }
 
   -- TODO: Flesh out other types of signatures.
-  Signature :: { Signature SourceSpan }
+  Signature :: { Signature }
     : ConstructorSignature { $1 }
 
-    ConstructorSignature :: { Signature SourceSpan }
-      : Identifier { uncurry ConstructorSignature $1 }
+    ConstructorSignature :: { Signature }
+      : Identifier { uncurry Language.ConstructorSignature $1 }
 
 -- Note [Name-Expression Separator in Quantifiers]:
 --
@@ -365,42 +360,42 @@ Program :: { Program SourceSpan }
 
 -- A keyword contextually interpreted as a name part.
 ContextualWord :: { (SourceSpan, Text) }
-  : addKeyword      { (tokenAnno $1, "add")      }
-  | afterKeyword    { (tokenAnno $1, "after")    }
-  | allKeyword      { (tokenAnno $1, "all")      }
-  | asKeyword       { (tokenAnno $1, "as")       }
-  | asyncKeyword    { (tokenAnno $1, "async")    }
-  | atomicKeyword   { (tokenAnno $1, "atomic")   }
-  | beforeKeyword   { (tokenAnno $1, "before")   }
-  | changeKeyword   { (tokenAnno $1, "change")   }
-  | eachKeyword     { (tokenAnno $1, "each")     }
-  | elseKeyword     { (tokenAnno $1, "else")     }
-  | entityKeyword   { (tokenAnno $1, "entity")   }
-  | everyKeyword    { (tokenAnno $1, "every")    }
-  | falseKeyword    { (tokenAnno $1, "false")    }
-  | forKeyword      { (tokenAnno $1, "for")      }
-  | functionKeyword { (tokenAnno $1, "function") }
-  | hasKeyword      { (tokenAnno $1, "has")      }
-  | ifKeyword       { (tokenAnno $1, "if")       }
-  | inKeyword       { (tokenAnno $1, "in")       }
-  | lastKeyword     { (tokenAnno $1, "last")     }
-  | longKeyword     { (tokenAnno $1, "long")     }
-  | needsKeyword    { (tokenAnno $1, "needs")    }
-  | nextKeyword     { (tokenAnno $1, "next")     }
-  | nullKeyword     { (tokenAnno $1, "null")     }
-  | onKeyword       { (tokenAnno $1, "on")       }
-  | redoKeyword     { (tokenAnno $1, "redo")     }
-  | removeKeyword   { (tokenAnno $1, "remove")   }
-  | returnKeyword   { (tokenAnno $1, "return")   }
-  | setKeyword      { (tokenAnno $1, "set")      }
-  | trueKeyword     { (tokenAnno $1, "true")     }
-  | untilKeyword    { (tokenAnno $1, "until")    }
-  | varKeyword      { (tokenAnno $1, "var")      }
-  | whenKeyword     { (tokenAnno $1, "when")     }
-  | wheneverKeyword { (tokenAnno $1, "whenever") }
-  | whereKeyword    { (tokenAnno $1, "where")    }
-  | whichKeyword    { (tokenAnno $1, "which")    }
-  | whileKeyword    { (tokenAnno $1, "while")    }
+  : add      { (tokenAnno $1, "add")      }
+  | after    { (tokenAnno $1, "after")    }
+  | all      { (tokenAnno $1, "all")      }
+  | as       { (tokenAnno $1, "as")       }
+  | async    { (tokenAnno $1, "async")    }
+  | atomic   { (tokenAnno $1, "atomic")   }
+  | before   { (tokenAnno $1, "before")   }
+  | change   { (tokenAnno $1, "change")   }
+  | each     { (tokenAnno $1, "each")     }
+  | else     { (tokenAnno $1, "else")     }
+  | entity   { (tokenAnno $1, "entity")   }
+  | every    { (tokenAnno $1, "every")    }
+  | false    { (tokenAnno $1, "false")    }
+  | for      { (tokenAnno $1, "for")      }
+  | function { (tokenAnno $1, "function") }
+  | has      { (tokenAnno $1, "has")      }
+  | if       { (tokenAnno $1, "if")       }
+  | in       { (tokenAnno $1, "in")       }
+  | last     { (tokenAnno $1, "last")     }
+  | long     { (tokenAnno $1, "long")     }
+  | needs    { (tokenAnno $1, "needs")    }
+  | next     { (tokenAnno $1, "next")     }
+  | null     { (tokenAnno $1, "null")     }
+  | on       { (tokenAnno $1, "on")       }
+  | redo     { (tokenAnno $1, "redo")     }
+  | remove   { (tokenAnno $1, "remove")   }
+  | return   { (tokenAnno $1, "return")   }
+  | set      { (tokenAnno $1, "set")      }
+  | true     { (tokenAnno $1, "true")     }
+  | until    { (tokenAnno $1, "until")    }
+  | var      { (tokenAnno $1, "var")      }
+  | when     { (tokenAnno $1, "when")     }
+  | whenever { (tokenAnno $1, "whenever") }
+  | where    { (tokenAnno $1, "where")    }
+  | which    { (tokenAnno $1, "which")    }
+  | while    { (tokenAnno $1, "while")    }
 
 --------------------------------------------------------------------------------
 -- Grammar Utilities
@@ -470,14 +465,24 @@ someR(p)  -- :: { Parser a -> Parser (NonEmpty a) }
 {
 
 --------------------------------------------------------------------------------
+-- AST
+--------------------------------------------------------------------------------
+
+type Binding    = Language.Binding    SourceSpan
+type Expression = Language.Expression SourceSpan
+type Literal    = Language.Literal    SourceSpan
+type Program    = Language.Program    SourceSpan
+type Signature  = Language.Signature  SourceSpan
+type Statement  = Language.Statement  SourceSpan
+
+type Token      = Token.Token         SourceSpan
+
+--------------------------------------------------------------------------------
 -- Statement
 --------------------------------------------------------------------------------
 
-atomicStatement
-  :: Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
-atomicStatement atomicKeyword body = AtomicStatement pos body
+atomicStatement :: Token -> Statement -> Statement
+atomicStatement atomicKeyword body = Language.AtomicStatement pos body
   where
     pos = mconcat
       [ tokenAnno atomicKeyword
@@ -485,14 +490,9 @@ atomicStatement atomicKeyword body = AtomicStatement pos body
       ]
 
 afterStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Expression -> Token -> Statement -> Statement
 afterStatement afterKeyword leftParenthesis condition rightParenthesis body
-  = AfterStatement pos condition body
+  = Language.AfterStatement pos condition body
   where
     pos = mconcat
       [ tokenAnno afterKeyword
@@ -503,17 +503,11 @@ afterStatement afterKeyword leftParenthesis condition rightParenthesis body
       ]
 
 asLongAsStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Token SourceSpan
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Token -> Token -> Expression -> Token -> Statement
+  -> Statement
 asLongAsStatement asKeyword longKeyword asKeyword' leftParenthesis condition
   rightParenthesis body
-  = AsLongAsStatement pos condition body
+  = Language.AsLongAsStatement pos condition body
   where
     pos = mconcat
       [ tokenAnno asKeyword
@@ -525,12 +519,9 @@ asLongAsStatement asKeyword longKeyword asKeyword' leftParenthesis condition
       , statementAnno body
       ]
 
-blockStatement
-  :: Token SourceSpan
-  -> [Statement SourceSpan]
-  -> Token SourceSpan
-  -> Statement SourceSpan
-blockStatement openBrace statements closeBrace = BlockStatement pos statements
+blockStatement :: Token -> [Statement] -> Token -> Statement
+blockStatement openBrace statements closeBrace
+  = Language.BlockStatement pos statements
   where
     pos = mconcat $ concat
       [ [tokenAnno openBrace]
@@ -538,26 +529,17 @@ blockStatement openBrace statements closeBrace = BlockStatement pos statements
       , [tokenAnno closeBrace]
       ]
 
-emptyStatement
-  :: Token SourceSpan
-  -> Statement SourceSpan
-emptyStatement semicolon = EmptyStatement pos
+emptyStatement :: Token -> Statement
+emptyStatement semicolon = Language.EmptyStatement pos
   where
     pos = tokenAnno semicolon
 
 forAllStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Token SourceSpan
-  -> (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Token -> (SourceSpan, Identifier) -> Token -> Expression
+  -> Token -> Statement -> Statement
 forAllStatement forKeyword allKeyword leftParenthesis (variablePos, variable)
   colon container rightParenthesis body
-  = ForAllStatement pos variable container body
+  = Language.ForAllStatement pos variable container body
   where
     pos = mconcat
       [ tokenAnno forKeyword
@@ -571,18 +553,11 @@ forAllStatement forKeyword allKeyword leftParenthesis (variablePos, variable)
       ]
 
 forEachStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Token SourceSpan
-  -> (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Token -> (SourceSpan, Identifier) -> Token -> Expression
+  -> Token -> Statement -> Statement
 forEachStatement forKeyword eachKeyword leftParenthesis (variablePos, variable)
   colon container rightParenthesis body
-  = ForEachStatement pos variable container body
+  = Language.ForEachStatement pos variable container body
   where
     pos = mconcat
       [ tokenAnno forKeyword
@@ -596,18 +571,15 @@ forEachStatement forKeyword eachKeyword leftParenthesis (variablePos, variable)
       ]
 
 functionStatement
-  :: Token SourceSpan
-  -> (SourceSpan, Identifier)
-  -> [Binding SourceSpan]
-  -> Maybe (Signature SourceSpan)
-  -> Token SourceSpan
-  -> Either (Expression SourceSpan) [Statement SourceSpan]
-  -> Token SourceSpan
-  -> Statement SourceSpan
+  :: Token -> (SourceSpan, Identifier) -> [Binding] -> Maybe (Signature)
+  -> Token -> Either (Expression) [Statement] -> Token -> Statement
 functionStatement functionKeyword (namePos, name) params returnType
   begin body end
-  = FunctionStatement pos name params returnType
-  $ either (ExpressionStatement bodyPos) (BlockStatement bodyPos) body
+  = Language.FunctionStatement pos name params returnType
+  $ either
+    (Language.ExpressionStatement bodyPos)
+    (Language.BlockStatement bodyPos)
+    body
   where
     pos = mconcat
       [ tokenAnno functionKeyword
@@ -623,17 +595,12 @@ functionStatement functionKeyword (namePos, name) params returnType
       ]
 
 ifStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Maybe (SourceSpan, Statement SourceSpan)
-  -> Statement SourceSpan
+  :: Token -> Token -> Expression -> Token -> Statement
+  -> Maybe (SourceSpan, Statement) -> Statement
 ifStatement ifKeyword
   leftParenthesis condition rightParenthesis
   thenClause elseClause
-  = IfStatement pos condition thenClause (snd <$> elseClause)
+  = Language.IfStatement pos condition thenClause (snd <$> elseClause)
   where
     pos = mconcat
       [ tokenAnno ifKeyword
@@ -644,10 +611,7 @@ ifStatement ifKeyword
       , foldMap fst elseClause
       ]
 
-elseClause
-  :: Token SourceSpan
-  -> Statement SourceSpan
-  -> (SourceSpan, Statement SourceSpan)
+elseClause :: Token -> Statement -> (SourceSpan, Statement)
 elseClause elseKeyword body = (pos, body)
   where
     pos = mconcat
@@ -655,13 +619,9 @@ elseClause elseKeyword body = (pos, body)
       , statementAnno body
       ]
 
-lastStatement
-  :: Token SourceSpan
-  -> Maybe (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Statement SourceSpan
+lastStatement :: Token -> Maybe (SourceSpan, Identifier) -> Token -> Statement
 lastStatement lastKeyword mIdentifier semicolon
-  = LastStatement pos (snd <$> mIdentifier)
+  = Language.LastStatement pos (snd <$> mIdentifier)
   where
     pos = mconcat
       [ tokenAnno lastKeyword
@@ -669,13 +629,9 @@ lastStatement lastKeyword mIdentifier semicolon
       , tokenAnno semicolon
       ]
 
-nextStatement
-  :: Token SourceSpan
-  -> Maybe (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Statement SourceSpan
+nextStatement :: Token -> Maybe (SourceSpan, Identifier) -> Token -> Statement
 nextStatement nextKeyword mIdentifier semicolon
-  = NextStatement pos (snd <$> mIdentifier)
+  = Language.NextStatement pos (snd <$> mIdentifier)
   where
     pos = mconcat
       [ tokenAnno nextKeyword
@@ -684,18 +640,11 @@ nextStatement nextKeyword mIdentifier semicolon
       ]
 
 onAddStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Token SourceSpan
-  -> (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Token -> (SourceSpan, Identifier) -> Token -> Expression
+  -> Token -> Statement -> Statement
 onAddStatement onKeyword addKeyword leftParenthesis (variablePos, variable)
   colon container rightParenthesis body
-  = OnAddStatement pos variable container body
+  = Language.OnAddStatement pos variable container body
   where
     pos = mconcat
       [ tokenAnno onKeyword
@@ -709,16 +658,11 @@ onAddStatement onKeyword addKeyword leftParenthesis (variablePos, variable)
       ]
 
 onChangeStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Token SourceSpan
-  -> NonEmpty (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Token -> NonEmpty (SourceSpan, Identifier) -> Token
+  -> Statement -> Statement
 onChangeStatement onKeyword changeKeyword leftParenthesis variables
   rightParenthesis body
-  = OnChangeStatement pos (snd <$> variables) body
+  = Language.OnChangeStatement pos (snd <$> variables) body
   where
     pos = mconcat
       [ tokenAnno onKeyword
@@ -730,18 +674,11 @@ onChangeStatement onKeyword changeKeyword leftParenthesis variables
       ]
 
 onRemoveStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Token SourceSpan
-  -> (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Token -> (SourceSpan, Identifier) -> Token
+  -> Expression -> Token -> Statement -> Statement
 onRemoveStatement onKeyword removeKeyword leftParenthesis
   (variablePos, variable) colon container rightParenthesis body
-  = OnRemoveStatement pos variable container body
+  = Language.OnRemoveStatement pos variable container body
   where
     pos = mconcat
       [ tokenAnno onKeyword
@@ -755,16 +692,11 @@ onRemoveStatement onKeyword removeKeyword leftParenthesis
       ]
 
 onSetStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Token SourceSpan
-  -> NonEmpty (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Token -> NonEmpty (SourceSpan, Identifier) -> Token
+  -> Statement -> Statement
 onSetStatement onKeyword setKeyword leftParenthesis variables
   rightParenthesis body
-  = OnSetStatement pos (snd <$> variables) body
+  = Language.OnSetStatement pos (snd <$> variables) body
   where
     pos = mconcat
       [ tokenAnno onKeyword
@@ -775,13 +707,9 @@ onSetStatement onKeyword setKeyword leftParenthesis variables
       , statementAnno body
       ]
 
-redoStatement
-  :: Token SourceSpan
-  -> Maybe (SourceSpan, Identifier)
-  -> Token SourceSpan
-  -> Statement SourceSpan
+redoStatement :: Token -> Maybe (SourceSpan, Identifier) -> Token -> Statement
 redoStatement redoKeyword mIdentifier semicolon
-  = RedoStatement pos (snd <$> mIdentifier)
+  = Language.RedoStatement pos (snd <$> mIdentifier)
   where
     pos = mconcat
       [ tokenAnno redoKeyword
@@ -789,13 +717,9 @@ redoStatement redoKeyword mIdentifier semicolon
       , tokenAnno semicolon
       ]
 
-returnStatement
-  :: Token SourceSpan
-  -> Maybe (Expression SourceSpan)
-  -> Token SourceSpan
-  -> Statement SourceSpan
+returnStatement :: Token -> Maybe Expression -> Token -> Statement
 returnStatement returnKeyword mResult semicolon
-  = ReturnStatement pos mResult
+  = Language.ReturnStatement pos mResult
   where
     pos = mconcat
       [ tokenAnno returnKeyword
@@ -803,13 +727,9 @@ returnStatement returnKeyword mResult semicolon
       , tokenAnno semicolon
       ]
 
-varStatement
-  :: Token SourceSpan
-  -> NonEmpty (Binding SourceSpan)
-  -> Token SourceSpan
-  -> Statement SourceSpan
+varStatement :: Token -> NonEmpty Binding -> Token -> Statement
 varStatement varKeyword bindings semicolon
-  = VarStatement pos bindings
+  = Language.VarStatement pos bindings
   where
     pos = mconcat
       [ tokenAnno varKeyword
@@ -817,16 +737,10 @@ varStatement varKeyword bindings semicolon
       , tokenAnno semicolon
       ]
 
-whenStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+whenStatement :: Token -> Token -> Expression -> Token -> Statement -> Statement
 whenStatement whenKeyword
   leftParenthesis condition rightParenthesis body
-  = WhenStatement pos condition body
+  = Language.WhenStatement pos condition body
   where
     pos = mconcat
       [ tokenAnno whenKeyword
@@ -837,15 +751,10 @@ whenStatement whenKeyword
       ]
 
 wheneverStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Expression -> Token -> Statement -> Statement
 wheneverStatement wheneverKeyword
   leftParenthesis condition rightParenthesis body
-  = WheneverStatement pos condition body
+  = Language.WheneverStatement pos condition body
   where
     pos = mconcat
       [ tokenAnno wheneverKeyword
@@ -856,15 +765,10 @@ wheneverStatement wheneverKeyword
       ]
 
 whileStatement
-  :: Token SourceSpan
-  -> Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-  -> Statement SourceSpan
+  :: Token -> Token -> Expression -> Token -> Statement -> Statement
 whileStatement whileKeyword
   leftParenthesis condition rightParenthesis body
-  = WhileStatement pos condition body
+  = Language.WhileStatement pos condition body
   where
     pos = mconcat
       [ tokenAnno whileKeyword
@@ -874,11 +778,8 @@ whileStatement whileKeyword
       , statementAnno body
       ]
 
-expressionStatement
-  :: Expression SourceSpan
-  -> Token SourceSpan
-  -> Statement SourceSpan
-expressionStatement body semicolon = ExpressionStatement pos body
+expressionStatement :: Expression -> Token -> Statement
+expressionStatement body semicolon = Language.ExpressionStatement pos body
   where
     pos = mconcat
       [ expressionAnno body
@@ -886,11 +787,8 @@ expressionStatement body semicolon = ExpressionStatement pos body
       ]
 
 binding
-  :: (SourceSpan, Identifier)
-  -> Maybe (Signature SourceSpan)
-  -> Maybe (Expression SourceSpan)
-  -> Binding SourceSpan
-binding (namePos, name) mSignature mInitializer = Binding
+  :: (SourceSpan, Identifier) -> Maybe Signature -> Maybe Expression -> Binding
+binding (namePos, name) mSignature mInitializer = Language.Binding
   -- TODO: Differentiate source spans of just name vs. whole binding?
   { bindingAnno        = namePos
   , bindingName        = name
@@ -902,16 +800,13 @@ binding (namePos, name) mSignature mInitializer = Binding
 -- Expression
 --------------------------------------------------------------------------------
 
-booleanExpression :: (SourceSpan, Bool) -> Expression SourceSpan
-booleanExpression (pos, value) = LiteralExpression pos (BooleanLiteral value)
+booleanExpression :: (SourceSpan, Bool) -> Expression
+booleanExpression (pos, value)
+  = Language.LiteralExpression pos (Language.BooleanLiteral value)
 
-groupExpression
-  :: Token SourceSpan
-  -> Expression SourceSpan
-  -> Token SourceSpan
-  -> Expression SourceSpan
+groupExpression :: Token -> Expression -> Token -> Expression
 groupExpression leftParenthesis body rightParenthesis
-  = GroupExpression pos body
+  = Language.GroupExpression pos body
   where
     pos = mconcat
       [ tokenAnno leftParenthesis
@@ -919,8 +814,9 @@ groupExpression leftParenthesis body rightParenthesis
       , tokenAnno rightParenthesis
       ]
 
-identifierExpression :: (SourceSpan, Identifier) -> Expression SourceSpan
-identifierExpression (pos, identifier) = IdentifierExpression pos identifier
+identifierExpression :: (SourceSpan, Identifier) -> Expression
+identifierExpression (pos, identifier)
+  = Language.IdentifierExpression pos identifier
 
 identifierParts
   :: (SourceSpan, Text) -> [(SourceSpan, Text)] -> (SourceSpan, Identifier)
@@ -938,11 +834,13 @@ identifierContinueDigits (pos, digits)
   = (pos, Text.pack (decimalDigitString digits))
 
 integerExpression
-  :: NonEmpty (SourceSpan, NonEmpty DecimalDigit) -> Expression SourceSpan
+  :: NonEmpty (SourceSpan, NonEmpty DecimalDigit) -> Expression
 integerExpression digits
-  = LiteralExpression (foldMap fst digits) (DecimalIntegerLiteral digits)
+  = Language.LiteralExpression
+    (foldMap fst digits)
+    (Language.DecimalIntegerLiteral digits)
 
-nullExpression :: SourceSpan -> Expression SourceSpan
-nullExpression pos = LiteralExpression pos NullLiteral
+nullExpression :: SourceSpan -> Expression
+nullExpression pos = Language.LiteralExpression pos Language.NullLiteral
 
 }
