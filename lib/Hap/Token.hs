@@ -355,6 +355,7 @@ tokenAnno = \ case
   PlusToken               anno      -> anno
   CommaToken              anno      -> anno
   MinusToken              anno      -> anno
+  RightArrowToken         anno      -> anno
   DotToken                anno      -> anno
   SlashToken              anno      -> anno
   ColonToken              anno      -> anno
