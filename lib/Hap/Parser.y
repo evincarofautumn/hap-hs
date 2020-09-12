@@ -91,43 +91,47 @@ import qualified Hap.Token as Token
 -- Keyword Tokens
 --------------------------------------------------------------------------------
 
-  -- TODO: Differentiate primary and secondary/contextual-only keywords.
-  add      { Token.KeywordToken (_, AddKeyword)      }
+  -- Primary keywords, which may not start a name.
   after    { Token.KeywordToken (_, AfterKeyword)    }
-  all      { Token.KeywordToken (_, AllKeyword)      }
   as       { Token.KeywordToken (_, AsKeyword)       }
   async    { Token.KeywordToken (_, AsyncKeyword)    }
   atomic   { Token.KeywordToken (_, AtomicKeyword)   }
   before   { Token.KeywordToken (_, BeforeKeyword)   }
-  change   { Token.KeywordToken (_, ChangeKeyword)   }
-  each     { Token.KeywordToken (_, EachKeyword)     }
-  else     { Token.KeywordToken (_, ElseKeyword)     }
   entity   { Token.KeywordToken (_, EntityKeyword)   }
-  every    { Token.KeywordToken (_, EveryKeyword)    }
-  false    { Token.KeywordToken (_, FalseKeyword)    }
   for      { Token.KeywordToken (_, ForKeyword)      }
   function { Token.KeywordToken (_, FunctionKeyword) }
-  has      { Token.KeywordToken (_, HasKeyword)      }
   if       { Token.KeywordToken (_, IfKeyword)       }
-  in       { Token.KeywordToken (_, InKeyword)       }
   last     { Token.KeywordToken (_, LastKeyword)     }
-  long     { Token.KeywordToken (_, LongKeyword)     }
-  needs    { Token.KeywordToken (_, NeedsKeyword)    }
   next     { Token.KeywordToken (_, NextKeyword)     }
-  null     { Token.KeywordToken (_, NullKeyword)     }
   on       { Token.KeywordToken (_, OnKeyword)       }
   redo     { Token.KeywordToken (_, RedoKeyword)     }
-  remove   { Token.KeywordToken (_, RemoveKeyword)   }
   return   { Token.KeywordToken (_, ReturnKeyword)   }
-  set      { Token.KeywordToken (_, SetKeyword)      }
-  true     { Token.KeywordToken (_, TrueKeyword)     }
   until    { Token.KeywordToken (_, UntilKeyword)    }
   var      { Token.KeywordToken (_, VarKeyword)      }
   when     { Token.KeywordToken (_, WhenKeyword)     }
   whenever { Token.KeywordToken (_, WheneverKeyword) }
+  while    { Token.KeywordToken (_, WhileKeyword)    }
+
+  -- Secondary keywords, which may start a name.
+  add      { Token.KeywordToken (_, AddKeyword)      }
+  all      { Token.KeywordToken (_, AllKeyword)      }
+  change   { Token.KeywordToken (_, ChangeKeyword)   }
+  each     { Token.KeywordToken (_, EachKeyword)     }
+  else     { Token.KeywordToken (_, ElseKeyword)     }
+  has      { Token.KeywordToken (_, HasKeyword)      }
+  long     { Token.KeywordToken (_, LongKeyword)     }
+  needs    { Token.KeywordToken (_, NeedsKeyword)    }
+  remove   { Token.KeywordToken (_, RemoveKeyword)   }
+  set      { Token.KeywordToken (_, SetKeyword)      }
+
+  -- Contextual keywords, which are only keywords when they appear alone.
+  every    { Token.KeywordToken (_, EveryKeyword)    }
+  false    { Token.KeywordToken (_, FalseKeyword)    }
+  in       { Token.KeywordToken (_, InKeyword)       }
+  null     { Token.KeywordToken (_, NullKeyword)     }
+  true     { Token.KeywordToken (_, TrueKeyword)     }
   where    { Token.KeywordToken (_, WhereKeyword)    }
   which    { Token.KeywordToken (_, WhichKeyword)    }
-  while    { Token.KeywordToken (_, WhileKeyword)    }
 
 --------------------------------------------------------------------------------
 -- Any Token (MUST BE LAST)
@@ -327,14 +331,19 @@ Program :: { Program }
     Identifier :: { (SourceSpan, Identifier) }
       : IdentifierStart many(IdentifierContinue)
       { identifierParts $1 $2 }
+      | ContextualKeyword some(IdentifierContinue)
+      { identifierParts $1 (NonEmpty.toList $2) }
 
       IdentifierStart :: { (SourceSpan, Text) }
-        : word { $1 }
+        : word             { $1 }
+        | SecondaryKeyword { $1 }
 
       IdentifierContinue :: { (SourceSpan, Text) }
-        : word           { $1 }
-        | ContextualWord { $1 }
-        | digits         { identifierContinueDigits $1 }
+        : word              { $1 }
+        | PrimaryKeyword    { $1 }
+        | SecondaryKeyword  { $1 }
+        | ContextualKeyword { $1 }
+        | digits            { identifierContinueDigits $1 }
 
     Null :: { SourceSpan }
       : null  { tokenAnno $1 }
@@ -359,44 +368,50 @@ Program :: { Program }
 -- Contextual Keywords
 --------------------------------------------------------------------------------
 
--- A keyword contextually interpreted as a name part.
-ContextualWord :: { (SourceSpan, Text) }
-  : add      { (tokenAnno $1, "add")      }
-  | after    { (tokenAnno $1, "after")    }
-  | all      { (tokenAnno $1, "all")      }
+-- A keyword that may appear within a name after the first part.
+PrimaryKeyword :: { (SourceSpan, Text) }
+  : after    { (tokenAnno $1, "after")    }
   | as       { (tokenAnno $1, "as")       }
   | async    { (tokenAnno $1, "async")    }
   | atomic   { (tokenAnno $1, "atomic")   }
   | before   { (tokenAnno $1, "before")   }
-  | change   { (tokenAnno $1, "change")   }
-  | each     { (tokenAnno $1, "each")     }
-  | else     { (tokenAnno $1, "else")     }
   | entity   { (tokenAnno $1, "entity")   }
-  | every    { (tokenAnno $1, "every")    }
-  | false    { (tokenAnno $1, "false")    }
   | for      { (tokenAnno $1, "for")      }
   | function { (tokenAnno $1, "function") }
-  | has      { (tokenAnno $1, "has")      }
   | if       { (tokenAnno $1, "if")       }
-  | in       { (tokenAnno $1, "in")       }
   | last     { (tokenAnno $1, "last")     }
-  | long     { (tokenAnno $1, "long")     }
-  | needs    { (tokenAnno $1, "needs")    }
   | next     { (tokenAnno $1, "next")     }
-  | null     { (tokenAnno $1, "null")     }
   | on       { (tokenAnno $1, "on")       }
   | redo     { (tokenAnno $1, "redo")     }
-  | remove   { (tokenAnno $1, "remove")   }
   | return   { (tokenAnno $1, "return")   }
-  | set      { (tokenAnno $1, "set")      }
-  | true     { (tokenAnno $1, "true")     }
   | until    { (tokenAnno $1, "until")    }
   | var      { (tokenAnno $1, "var")      }
   | when     { (tokenAnno $1, "when")     }
   | whenever { (tokenAnno $1, "whenever") }
-  | where    { (tokenAnno $1, "where")    }
-  | which    { (tokenAnno $1, "which")    }
   | while    { (tokenAnno $1, "while")    }
+
+-- A keyword that may appear as the first part in a name.
+SecondaryKeyword :: { (SourceSpan, Text) }
+  : add    { (tokenAnno $1, "add")    }
+  | all    { (tokenAnno $1, "all")    }
+  | change { (tokenAnno $1, "change") }
+  | each   { (tokenAnno $1, "each")   }
+  | else   { (tokenAnno $1, "else")   }
+  | has    { (tokenAnno $1, "has")    }
+  | long   { (tokenAnno $1, "long")   }
+  | needs  { (tokenAnno $1, "needs")  }
+  | remove { (tokenAnno $1, "remove") }
+  | set    { (tokenAnno $1, "set")    }
+
+-- A name that is only a keyword when it appears alone.
+ContextualKeyword :: { (SourceSpan, Text) }
+  : every { (tokenAnno $1, "every") }
+  | false { (tokenAnno $1, "false") }
+  | in    { (tokenAnno $1, "in")    }
+  | null  { (tokenAnno $1, "null")  }
+  | true  { (tokenAnno $1, "true")  }
+  | where { (tokenAnno $1, "where") }
+  | which { (tokenAnno $1, "which") }
 
 --------------------------------------------------------------------------------
 -- Grammar Utilities

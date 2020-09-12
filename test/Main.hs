@@ -171,7 +171,7 @@ spec = do
 
       describe "identifiers" do
 
-        specify "alpha" do
+        specify "alpha => name(1)" do
           parseTest "velocity;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
@@ -179,7 +179,7 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "Alpha" do
+        specify "Alpha => name(1)" do
           parseTest "Block;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
@@ -187,7 +187,7 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "alnum" do
+        specify "alnum => name(1)" do
           parseTest "player1;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
@@ -195,7 +195,7 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "Alpha Alpha" do
+        specify "Alpha Alpha => name(2)" do
           parseTest "Main Window;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
@@ -203,11 +203,51 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "alpha num keyword alpha" do
+        specify "alpha num primary alpha => name(4)" do
           parseTest "level 1 return door;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (IdentifierExpression _ "level 1 return door")
+              ]) -> True
+            _ -> False
+
+        specify "primary alpha => keyword name(1)" do
+          parseTest "return x;" \ program -> case program of
+            Right (Program
+              [ ReturnStatement _
+                (Just (IdentifierExpression _ "x"))
+              ]) -> True
+            _ -> False
+
+        specify "secondary alpha => name(2)" do
+          parseTest "add enemies;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "add enemies")
+              ]) -> True
+            _ -> False
+
+        specify "contextual => keyword" do
+          parseTest "false;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (BooleanLiteral False))
+              ]) -> True
+            _ -> False
+
+        specify "contextual alpha => name(2)" do
+          parseTest "false block;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "false block")
+              ]) -> True
+            _ -> False
+
+        specify "alpha numalpha => name(3)" do
+          parseTest "wait 10s;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (IdentifierExpression _ "wait 10 s")
               ]) -> True
             _ -> False
 
