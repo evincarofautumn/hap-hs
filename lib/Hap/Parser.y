@@ -14,6 +14,9 @@ import Hap.Language
   ( Identifier(..)
   , bindingAnno
   , decimalDigitString
+  , decimalFractionAnno
+  , decimalIntegerPartAnno
+  , decimalIntegerParts
   , expressionAnno
   , signatureAnno
   , statementAnno
@@ -48,7 +51,7 @@ import qualified Hap.Token as Token
 --------------------------------------------------------------------------------
 
   word   { Token.WordToken   $$ }
-  digits { Token.DigitsToken $$ }
+  digits { Token.DigitsToken (uncurry Language.DecimalIntegerPart -> $$) }
 
 --------------------------------------------------------------------------------
 -- Symbol Tokens
@@ -322,7 +325,7 @@ Program :: { Program }
     | '(' Expression ')' { groupExpression $1 $2 $3 }
 
     | Identifier         { identifierExpression $1 }
-    | some(digits)       { integerExpression $1 }
+    | Number             { $1 }
 
     Boolean :: { (SourceSpan, Bool) }
       : true  { (tokenAnno $1, True) }
@@ -348,6 +351,21 @@ Program :: { Program }
     Null :: { SourceSpan }
       : null  { tokenAnno $1 }
 
+    Number :: { Expression }
+      -- See note [Float Exponents].
+      : opt(Integer) Fraction { floatExpression $1 $2 }
+      | Integer               { integerExpression $1 }
+
+      Integer :: { DecimalInteger }
+        : some(digits) { Language.DecimalInteger $1 }
+
+      Fraction :: { DecimalFraction }
+        : '.' some(digits) { floatFraction $1 $2 }
+
+      Sign :: { Sign }
+        : '+' { Language.Plus (tokenAnno $1) }
+        | '-' { Language.Minus (tokenAnno $1) }
+
   -- TODO: Flesh out other types of signatures.
   Signature :: { Signature }
     : ConstructorSignature { $1 }
@@ -363,6 +381,17 @@ Program :: { Program }
 -- ambiguity with identifiers by using a keyword such as ‘in’, but it’s
 -- arbitrary and not grounded in any specific usability arguments apart from
 -- precedent in some other languages.
+
+-- Note [Float Exponents]:
+--
+-- Most mainstream languages, especially of C style, support exponential
+-- “scientific” notation for floating-point literals. Adding this to Hap would
+-- complicate the lexer, going against the design principle of avoiding
+-- “sublanguages” as much as possible. It also doesn’t seem necessary to allow
+-- ‘2e+6’ when this can already be written with digit separators as ‘2 000 000’
+-- or as an expression ‘2*10^6’. The ‘e’ notation is unfamiliar to many people
+-- who haven’t programmed before, and in scientific contexts, it’s more commonly
+-- typeset differently, with a small capital ᴇ (U+1D07) / ⏨ (U+23E8).
 
 --------------------------------------------------------------------------------
 -- Contextual Keywords
@@ -484,14 +513,19 @@ someR(p)  -- :: { Parser a -> Parser (NonEmpty a) }
 -- AST
 --------------------------------------------------------------------------------
 
-type Binding    = Language.Binding    SourceSpan
-type Expression = Language.Expression SourceSpan
-type Literal    = Language.Literal    SourceSpan
-type Program    = Language.Program    SourceSpan
-type Signature  = Language.Signature  SourceSpan
-type Statement  = Language.Statement  SourceSpan
+type Binding            = Language.Binding            SourceSpan
+type DecimalFloat       = Language.DecimalFloat       SourceSpan
+type DecimalFraction    = Language.DecimalFraction    SourceSpan
+type DecimalInteger     = Language.DecimalInteger     SourceSpan
+type DecimalIntegerPart = Language.DecimalIntegerPart SourceSpan
+type Expression         = Language.Expression         SourceSpan
+type Literal            = Language.Literal            SourceSpan
+type Program            = Language.Program            SourceSpan
+type Sign               = Language.Sign               SourceSpan
+type Signature          = Language.Signature          SourceSpan
+type Statement          = Language.Statement          SourceSpan
 
-type Token      = Token.Token         SourceSpan
+type Token              = Token.Token                 SourceSpan
 
 --------------------------------------------------------------------------------
 -- Statement
@@ -844,17 +878,61 @@ identifierParts
   , Identifier (startPart :| continueParts)
   )
 
-identifierContinueDigits
-  :: (SourceSpan, NonEmpty DecimalDigit) -> (SourceSpan, Text)
-identifierContinueDigits (pos, digits)
+identifierContinueDigits :: DecimalIntegerPart -> (SourceSpan, Text)
+identifierContinueDigits (Language.DecimalIntegerPart pos digits)
   = (pos, Text.pack (decimalDigitString digits))
 
-integerExpression
-  :: NonEmpty (SourceSpan, NonEmpty DecimalDigit) -> Expression
+floatExpression
+  :: Maybe DecimalInteger
+  -> DecimalFraction
+  -- Maybe DecimalExponent
+  -> Expression
+floatExpression mInteger fraction -- mExponent
+  = Language.LiteralExpression pos
+  $ Language.DecimalFloatLiteral
+  $ Language.DecimalFloat mInteger fraction -- mExponent
+  where
+    pos = mconcat
+      [ foldMap (foldMap decimalIntegerPartAnno . decimalIntegerParts) mInteger
+      , decimalFractionAnno fraction
+      -- foldMap decimalExponentAnno mExponent
+      ]
+
+-- See note [Float Exponents].
+--
+-- floatExponent
+--   :: Token
+--   -> Maybe Sign
+--   -> DecimalIntegerPart
+--   -> DecimalExponent
+-- floatExponent e mSign digits
+--   = Language.DecimalExponent pos ePos mSign digits
+--   where
+--     pos = mconcat
+--       [ ePos
+--       , foldMap signAnno mSign
+--       , foldMap decimalIntegerPartAnno digits
+--       ]
+
+floatFraction
+  :: Token
+  -> NonEmpty DecimalIntegerPart
+  -> DecimalFraction
+floatFraction dot digits
+  = Language.DecimalFraction pos dotPos digits
+  where
+    pos = mconcat
+      [ dotPos
+      , foldMap decimalIntegerPartAnno digits
+      ]
+    dotPos = tokenAnno dot
+
+integerExpression :: DecimalInteger -> Expression
 integerExpression digits
-  = Language.LiteralExpression
-    (foldMap fst digits)
-    (Language.DecimalIntegerLiteral digits)
+  = Language.LiteralExpression pos
+  $ Language.DecimalIntegerLiteral digits
+  where
+    pos = foldMap decimalIntegerPartAnno $ decimalIntegerParts digits
 
 nullExpression :: SourceSpan -> Expression
 nullExpression pos = Language.LiteralExpression pos Language.NullLiteral

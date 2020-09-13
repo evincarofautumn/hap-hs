@@ -10,13 +10,17 @@ import Hap.Compiler (compile, newEmptyContext)
 import Hap.Language
   ( BinaryOperator(..)
   , Binding(..)
+  , DecimalFloat(..)
+  , DecimalFraction(..)
+  , DecimalInteger(..)
+  , DecimalIntegerPart(..)
   , Expression(..)
   , Literal(..)
   , Program(..)
   , Signature(..)
   , Statement(..)
   , UnaryOperator(..)
-  , decimalIntegerLiteralString
+  , decimalIntegerString
   )
 import Hap.ParserWrapper (ParseError, parseProgram)
 import Hap.Token (DecimalDigit(..), SourceSpan)
@@ -273,7 +277,11 @@ spec = do
           parseTest "1.0;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ (FloatLiteral 1.0))
+                (LiteralExpression _ (DecimalFloatLiteral (DecimalFloat
+                  (Just (DecimalInteger (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty [DecimalDigit 1])])))
+                  (DecimalFraction _ _ (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty [DecimalDigit 0])])))))
               ]) -> True
             _ -> False
 
@@ -281,7 +289,11 @@ spec = do
           parseTest "1.5;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ (FloatLiteral 1.5))
+                (LiteralExpression _ (DecimalFloatLiteral (DecimalFloat
+                  (Just (DecimalInteger (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty [DecimalDigit 1])])))
+                  (DecimalFraction _ _ (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty [DecimalDigit 5])])))))
               ]) -> True
             _ -> False
 
@@ -289,7 +301,113 @@ spec = do
           parseTest "10.125;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ (FloatLiteral 10.125))
+                (LiteralExpression _ (DecimalFloatLiteral (DecimalFloat
+                  (Just (DecimalInteger (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 1
+                      , DecimalDigit 0
+                      ])])))
+                  (DecimalFraction _ _ (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 1
+                      , DecimalDigit 2
+                      , DecimalDigit 5
+                      ])])))))
+              ]) -> True
+            _ -> False
+
+        specify "float with no integer part" do
+          parseTest ".5;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (DecimalFloatLiteral (DecimalFloat
+                  Nothing
+                  (DecimalFraction _ _ (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty [DecimalDigit 5])])))))
+              ]) -> True
+            _ -> False
+
+        specify "float with multiple integer parts" do
+          parseTest "1 234.00;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (DecimalFloatLiteral (DecimalFloat
+                  (Just (DecimalInteger (NonEmpty
+                    [ DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 1
+                      ])
+                    , DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 2
+                      , DecimalDigit 3
+                      , DecimalDigit 4
+                      ])
+                    ])))
+                  (DecimalFraction _ _ (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty
+                      [DecimalDigit 0, DecimalDigit 0])])))))
+              ]) -> True
+            _ -> False
+
+        specify "float with multiple fractional parts" do
+          -- NB: 1023/1024
+          parseTest "0.999 023 437 500;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (DecimalFloatLiteral (DecimalFloat
+                  (Just (DecimalInteger (NonEmpty
+                    [DecimalIntegerPart _ (NonEmpty [DecimalDigit 0])])))
+                  (DecimalFraction _ _ (NonEmpty
+                    [ DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 9
+                      , DecimalDigit 9
+                      , DecimalDigit 9
+                      ])
+                    , DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 0
+                      , DecimalDigit 2
+                      , DecimalDigit 3
+                      ])
+                    , DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 4
+                      , DecimalDigit 3
+                      , DecimalDigit 7
+                      ])
+                    , DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 5
+                      , DecimalDigit 0
+                      , DecimalDigit 0
+                      ])
+                    ])))))
+              ]) -> True
+            _ -> False
+
+        specify "float with multiple integer and fractional parts" do
+          parseTest "1 024.062 500;" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (LiteralExpression _ (DecimalFloatLiteral (DecimalFloat
+                  (Just (DecimalInteger (NonEmpty
+                    [ DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 1
+                      ])
+                    , DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 0
+                      , DecimalDigit 2
+                      , DecimalDigit 4
+                      ])
+                    ])))
+                  (DecimalFraction _ _ (NonEmpty
+                    [ DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 0
+                      , DecimalDigit 6
+                      , DecimalDigit 2
+                      ])
+                    , DecimalIntegerPart _ (NonEmpty
+                      [ DecimalDigit 5
+                      , DecimalDigit 0
+                      , DecimalDigit 0
+                      ])
+                    ])))))
               ]) -> True
             _ -> False
 
@@ -313,11 +431,12 @@ spec = do
           parseTest "1 000;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ (DecimalIntegerLiteral (NonEmpty
-                  [ snd -> NonEmpty [DecimalDigit 1]
-                  , snd -> NonEmpty
-                    [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
-                  ])))
+                (LiteralExpression _ (DecimalIntegerLiteral
+                  (DecimalInteger (NonEmpty
+                    [ decimalIntegerPartDigits -> NonEmpty [DecimalDigit 1]
+                    , decimalIntegerPartDigits -> NonEmpty
+                      [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
+                    ]))))
               ]) -> True
             _ -> False
 
@@ -325,13 +444,14 @@ spec = do
           parseTest "1 000 000;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ (DecimalIntegerLiteral (NonEmpty
-                  [ snd -> NonEmpty [DecimalDigit 1]
-                  , snd -> NonEmpty
-                    [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
-                  , snd -> NonEmpty
-                    [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
-                  ])))
+                (LiteralExpression _ (DecimalIntegerLiteral
+                  (DecimalInteger (NonEmpty
+                    [ decimalIntegerPartDigits -> NonEmpty [DecimalDigit 1]
+                    , decimalIntegerPartDigits -> NonEmpty
+                      [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
+                    , decimalIntegerPartDigits -> NonEmpty
+                      [DecimalDigit 0, DecimalDigit 0, DecimalDigit 0]
+                    ]))))
               ]) -> True
             _ -> False
 
@@ -1715,6 +1835,6 @@ pattern IntegerLiteral :: Int -> Literal anno
 pattern IntegerLiteral n
   <- (\ case {
       DecimalIntegerLiteral digits
-        -> Just $ readMaybe $ decimalIntegerLiteralString digits;
+        -> Just $ readMaybe $ decimalIntegerString digits;
       _ -> Nothing;
     } -> Just (Just n))

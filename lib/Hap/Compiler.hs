@@ -7,9 +7,8 @@ module Hap.Compiler
   , newEmptyContext
   ) where
 
-import Control.Monad (join, void, when)
+import Control.Monad (void, when)
 import Control.Monad.IO.Class
-import Data.Char (ord)
 import Data.Fixed (mod')
 import Data.IORef
 import Data.List ((\\), foldl', intersect, union)
@@ -198,17 +197,17 @@ compileExpression
 compileExpression context expression = case expression of
   LiteralExpression _pos literal -> case literal of
     BooleanLiteral value -> pure $ pure $ BooleanValue value
-    DecimalIntegerLiteral parts
+    DecimalIntegerLiteral integer
       -> pure $ pure $ IntegerValue value
       where
-        digits = fmap (toEnum . (+ ord '0') . fromEnum)
-          $ NonEmpty.toList $ join $ snd <$> parts
+        digits = decimalIntegerString integer
         value = case readMaybe digits of
           Just x -> x
           -- TODO: Use proper error reporting or remove partiality.
           Nothing -> error
             "internal error: non-digits in decimal integer literal"
-    FloatLiteral value -> pure $ pure $ FloatValue value
+    DecimalFloatLiteral float
+      -> error "TODO: compile float literal" -- pure $ pure $ FloatValue value
     ListLiteral elements -> do
       compiledElements <- traverse (compileExpression context) elements
       pure do

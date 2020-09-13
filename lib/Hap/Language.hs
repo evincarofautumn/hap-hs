@@ -3,22 +3,28 @@
 module Hap.Language
   ( BinaryOperator(..)
   , Binding(..)
+  , DecimalFloat(..)
+  , DecimalFraction(..)
+  , DecimalInteger(..)
+  , DecimalIntegerPart(..)
   , Expression(..)
   , Identifier(..)
   , Literal(..)
   , NativeId
   , Program(..)
+  , Sign(..)
   , Signature(..)
   , Statement(..)
   , UnaryOperator(..)
   , Value(..)
   , decimalDigitString
-  , decimalIntegerLiteralString
+  , decimalIntegerString
   , expressionAnno
   , identifierText
   , nativeFunction
   , nativeId
   , nativeName
+  , signAnno
   , signatureAnno
   , statementAnno
   ) where
@@ -175,8 +181,8 @@ expressionAnno = \ case
 -- TODO: Keep structured literals around here instead of just values.
 data Literal anno
   = BooleanLiteral !Bool
-  | DecimalIntegerLiteral !(NonEmpty (anno, NonEmpty DecimalDigit))
-  | FloatLiteral !Double
+  | DecimalFloatLiteral !(DecimalFloat anno)
+  | DecimalIntegerLiteral !(DecimalInteger anno)
   | FunctionLiteral
     !(Maybe Identifier)
     [(Identifier, Maybe (Signature anno), Maybe (Expression anno))]
@@ -189,12 +195,59 @@ data Literal anno
   | TextLiteral !Text
   deriving stock (Eq, Functor, Show)
 
+data DecimalFloat anno = DecimalFloat
+  { decimalFloatInteger  :: !(Maybe (DecimalInteger anno))
+  , decimalFloatFraction :: !(DecimalFraction anno)
+  -- See note [Float Exponents].
+  -- decimalFloatExponent :: !(Maybe (DecimalExponent anno))
+  }
+  deriving stock (Eq, Functor, Show)
+
+data DecimalFraction anno = DecimalFraction
+  { decimalFractionAnno   :: anno
+  , decimalFractionDot    :: anno
+  , decimalFractionDigits :: !(NonEmpty (DecimalIntegerPart anno))
+  }
+  deriving stock (Eq, Functor, Show)
+
+-- See note [Float Exponents].
+--
+-- data DecimalExponent anno = DecimalExponent
+--   { decimalExponentAnno   :: anno
+--   , decimalExponentE      :: anno
+--   , decimalExponentSign   :: !(Maybe (Sign anno))
+--   , decimalExponentDigits :: !(NonEmpty (DecimalDigit))
+--   }
+--   deriving stock (Eq, Functor, Show)
+
+data Sign anno
+  = Plus anno
+  | Minus anno
+  deriving stock (Eq, Functor, Show)
+
+signAnno :: Sign anno -> anno
+signAnno = \ case
+  Plus  anno -> anno
+  Minus anno -> anno
+
+newtype DecimalInteger anno = DecimalInteger
+  { decimalIntegerParts :: NonEmpty (DecimalIntegerPart anno) }
+  deriving stock (Eq, Functor, Show)
+
+data DecimalIntegerPart anno = DecimalIntegerPart
+  { decimalIntegerPartAnno   :: anno
+  , decimalIntegerPartDigits :: !(NonEmpty DecimalDigit)
+  }
+  deriving stock (Eq, Functor, Show)
+
 decimalDigitString :: NonEmpty DecimalDigit -> String
 decimalDigitString = fmap decimalDigitChar . NonEmpty.toList
 
-decimalIntegerLiteralString
-  :: NonEmpty (anno, NonEmpty DecimalDigit) -> String
-decimalIntegerLiteralString = decimalDigitString . join . fmap snd
+decimalIntegerString :: DecimalInteger anno -> String
+decimalIntegerString
+  = decimalDigitString
+  . join . fmap decimalIntegerPartDigits
+  . decimalIntegerParts
 
 data UnaryOperator
   = UnaryEach
