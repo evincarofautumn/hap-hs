@@ -5,11 +5,13 @@ module Hap.Token
   , DecimalDigit(..)
   , Keyword(..)
   , Offset(..)
+  , Quote(..)
   , Row(..)
   , SourcePosition(..)
   , SourceSpan(..)
   , Token(..)
   , decimalDigitChar
+  , quoteFromChar
   , tokenAnno
   ) where
 
@@ -91,6 +93,7 @@ instance Pretty SourceSpan where
           , pretty endColumn
           ]
 
+-- TODO: Unicode variants of tokens.
 data Token anno
 
   -- | An identifier part.
@@ -101,6 +104,9 @@ data Token anno
 
   -- | A number part.
   | DigitsToken (anno, NonEmpty DecimalDigit)
+
+  -- | A text literal with the given quotation marks
+  | TextToken Quote Quote (anno, Text)
 
   -- | @(@
   | LeftParenthesisToken anno
@@ -205,42 +211,45 @@ data Token anno
 
 instance Pretty (Token anno) where
   pretty = \ case
-    WordToken (_, word)       -> pretty word
-    KeywordToken (_, keyword) -> pretty keyword
-    DigitsToken (_, digits)   -> foldMap pretty digits
-    LeftParenthesisToken{}    -> "("
-    RightParenthesisToken{}   -> ")"
-    BangToken{}               -> "!"
-    NumberToken{}             -> "#"
-    PercentToken{}            -> "%"
-    AndToken{}                -> "&"
-    StarToken{}               -> "*"
-    PlusToken{}               -> "+"
-    CommaToken{}              -> ","
-    MinusToken{}              -> "-"
-    RightArrowToken{}         -> "->"
-    DotToken{}                -> "."
-    SlashToken{}              -> "/"
-    ColonToken{}              -> ":"
-    SemicolonToken{}          -> ";"
-    LessThanToken{}           -> "<"
-    LessThanOrEqualToken{}    -> "<="
-    NotEqualToken{}           -> "<>"
-    EqualToken{}              -> "="
-    GreaterThanToken{}        -> ">"
-    GreaterThanOrEqualToken{} -> ">="
-    QuestionToken{}           -> "?"
-    AtToken{}                 -> "@"
-    LeftSquareBracketToken{}  -> "["
-    BackslashToken{}          -> "\\"
-    RightSquareBracketToken{} -> "]"
-    CaretToken{}              -> "^"
-    UnderscoreToken{}         -> "_"
-    LeftCurlyBraceToken{}     -> "{"
-    PipeToken{}               -> "|"
-    RightCurlyBraceToken{}    -> "}"
-    TildeToken{}              -> "~"
-    EofToken                  -> "<end of file>"
+    WordToken (_, word)            -> pretty word
+    KeywordToken (_, keyword)      -> pretty keyword
+    DigitsToken (_, digits)        -> foldMap pretty digits
+    TextToken open close (_, text) -> prettyText open close text
+    LeftParenthesisToken{}         -> "("
+    RightParenthesisToken{}        -> ")"
+    BangToken{}                    -> "!"
+    NumberToken{}                  -> "#"
+    PercentToken{}                 -> "%"
+    AndToken{}                     -> "&"
+    StarToken{}                    -> "*"
+    PlusToken{}                    -> "+"
+    CommaToken{}                   -> ","
+    MinusToken{}                   -> "-"
+    RightArrowToken{}              -> "->"
+    DotToken{}                     -> "."
+    SlashToken{}                   -> "/"
+    ColonToken{}                   -> ":"
+    SemicolonToken{}               -> ";"
+    LessThanToken{}                -> "<"
+    LessThanOrEqualToken{}         -> "<="
+    NotEqualToken{}                -> "<>"
+    EqualToken{}                   -> "="
+    GreaterThanToken{}             -> ">"
+    GreaterThanOrEqualToken{}      -> ">="
+    QuestionToken{}                -> "?"
+    AtToken{}                      -> "@"
+    LeftSquareBracketToken{}       -> "["
+    BackslashToken{}               -> "\\"
+    RightSquareBracketToken{}      -> "]"
+    CaretToken{}                   -> "^"
+    UnderscoreToken{}              -> "_"
+    LeftCurlyBraceToken{}          -> "{"
+    PipeToken{}                    -> "|"
+    RightCurlyBraceToken{}         -> "}"
+    TildeToken{}                   -> "~"
+    EofToken                       -> "<end of file>"
+    where
+      prettyText open close = (pretty open <>) . (<> pretty close) . pretty
 
 newtype DecimalDigit = DecimalDigit Int
   deriving stock (Eq, Show)
@@ -261,6 +270,20 @@ instance Enum DecimalDigit where
 
 instance Pretty DecimalDigit where
   pretty = pretty . fromEnum
+
+data Quote = SingleQuote | DoubleQuote
+  deriving stock (Eq, Show)
+
+quoteFromChar :: Char -> Quote
+quoteFromChar = \ case
+  '\'' -> SingleQuote
+  '\"' -> DoubleQuote
+  char -> error $ "quoteFromChar: invalid quote character " <> show char
+
+instance Pretty Quote where
+  pretty = \ case
+    SingleQuote -> Pretty.squote
+    DoubleQuote -> Pretty.dquote
 
 data Keyword
   = AddKeyword
@@ -344,6 +367,7 @@ tokenAnno :: Token anno -> anno
 tokenAnno = \ case
   WordToken               (anno, _) -> anno
   KeywordToken            (anno, _) -> anno
+  TextToken _ _           (anno, _) -> anno
   DigitsToken             (anno, _) -> anno
   LeftParenthesisToken    anno      -> anno
   RightParenthesisToken   anno      -> anno

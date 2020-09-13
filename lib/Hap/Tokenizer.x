@@ -5,11 +5,12 @@ module Hap.Tokenizer
   , alexScan
   ) where
 
+import Control.Monad (join)
 import Data.Char (ord)
 import Data.List.NonEmpty (NonEmpty(..), nonEmpty)
 import Data.Maybe (fromMaybe)
 import Hap.ParserMonad (AlexInput, alexGetByte, spanned)
-import Hap.Token (Keyword(..), Token(..))
+import Hap.Token (Keyword(..), Token(..), quoteFromChar)
 import qualified Data.Text as Text
 
 }
@@ -22,6 +23,8 @@ $whitespace    = [\t\n\v\f\r\ ]
 $word_start    = [A-Za-z]
 $word_continue = [0-9A-Za-z]
 $digit         = [0-9]
+$quote         = [\'\"]
+$nonquote      = ~$quote
 
 --------------------------------------------------------------------------------
 -- Lexical classes
@@ -30,6 +33,7 @@ $digit         = [0-9]
 @word         = $word_start $word_continue*
 @line_comment = "//".*
 @digits       = $digit+
+@text         = $quote $nonquote* $quote
 
 --------------------------------------------------------------------------------
 -- Tokens
@@ -95,6 +99,16 @@ token :-
     , fromMaybe (toEnum 0 :| []) $ nonEmpty
       $ (toEnum . subtract (ord '0') . ord) <$> t
     )
+  }
+
+  @text { let
+    getOpen = Text.splitAt 1
+    getClose = join (Text.splitAt . subtract 1 . Text.length)
+    in spanned \ s (getOpen . Text.pack -> (open, getClose -> (body, close)))
+    -> TextToken
+      (quoteFromChar (Text.head open))
+      (quoteFromChar (Text.head close))
+      (s, body)
   }
 
 --------------------------------------------------------------------------------

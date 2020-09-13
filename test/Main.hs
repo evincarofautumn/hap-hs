@@ -18,6 +18,7 @@ import Hap.Language
   , Literal(..)
   , Program(..)
   , Signature(..)
+  , Splice(..)
   , Statement(..)
   , UnaryOperator(..)
   , decimalIntegerString
@@ -455,29 +456,94 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "empty string" do
-          parseTest "\"\";" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (LiteralExpression _ (TextLiteral ""))
-              ]) -> True
-            _ -> False
+        describe "text" do
 
-        specify "string" do
-          parseTest "\"abc123\";" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (LiteralExpression _ (TextLiteral "abc123"))
-              ]) -> True
-            _ -> False
+          specify "empty" do
+            parseTest "\"\";" \ program -> case program of
+              Right (Program
+                [ ExpressionStatement _
+                  (LiteralExpression _ (TextLiteral ""))
+                ]) -> True
+              _ -> False
 
-        specify "string escapes" do
-          parseTest "\"\\\"\\\\\";" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (LiteralExpression _ (TextLiteral "\"\\"))
-              ]) -> True
-            _ -> False
+          specify "basic" do
+            parseTest "\"abc123\";" \ program -> case program of
+              Right (Program
+                [ ExpressionStatement _
+                  (LiteralExpression _ (TextLiteral "abc123"))
+                ]) -> True
+              _ -> False
+
+          specify "trivial splice" do
+            parseTest "\"'1'\";" \ program -> case program of
+              Right (Program
+                [ ExpressionStatement _
+                  (SpliceExpression _ (NonEmpty
+                    [ TextSplice (_, "")
+                    , ExpressionSplice (LiteralExpression _ (IntegerLiteral 1))
+                    , TextSplice (_, "")
+                    ]))
+                ]) -> True
+              _ -> False
+
+          specify "splice with prefix and suffix" do
+            parseTest "\"before' between 'after\";" \ program -> case program of
+              Right (Program
+                [ ExpressionStatement _
+                  (SpliceExpression _ (NonEmpty
+                    [ TextSplice (_, "before")
+                    , ExpressionSplice (IdentifierExpression _ "between")
+                    , TextSplice (_, "after")
+                    ]))
+                ]) -> True
+              _ -> False
+
+          specify "multiple splices" do
+            parseTest "\"<x:'x', y:'y', z:'z'>\";" \ program -> case program of
+              Right (Program
+                [ ExpressionStatement _
+                  (SpliceExpression _ (NonEmpty
+                    [ TextSplice (_, "<x:")
+                    , ExpressionSplice (IdentifierExpression _ "x")
+                    , TextSplice (_, ", y:")
+                    , ExpressionSplice (IdentifierExpression _ "y")
+                    , TextSplice (_, ", z:")
+                    , ExpressionSplice (IdentifierExpression _ "z")
+                    , TextSplice (_, ">")
+                    ]))
+                ]) -> True
+              _ -> False
+
+          specify "nested splices" do
+            parseTest "\
+              \\"before 1 ' \
+              \splice 1(\"before 2 ' splice 2 ' after 2\") \
+              \' after 1\";\
+              \\&" \ program -> case program of
+              Right (Program
+                [ ExpressionStatement _
+                  (SpliceExpression _ (NonEmpty
+                    [ TextSplice (_, "before 1 ")
+                    , ExpressionSplice (CallExpression _
+                      (IdentifierExpression _ "splice 1")
+                      [ SpliceExpression _ (NonEmpty
+                        [ TextSplice (_, "before 2 ")
+                        , ExpressionSplice (IdentifierExpression _ "splice 2")
+                        , TextSplice (_, " after 2")
+                        ])
+                      ])
+                    , TextSplice (_, " after 1")
+                    ]))
+                ]) -> True
+              _ -> False
+
+          specify "backslash is not special" do
+            parseTest "\"\\\";" \ program -> case program of
+              Right (Program
+                [ ExpressionStatement _
+                  (LiteralExpression _ (TextLiteral "\\"))
+                ]) -> True
+              _ -> False
 
         specify "null" do
           parseTest "null;" \ program -> case program of
@@ -715,6 +781,56 @@ spec = do
             _ -> False
 
       describe "expression suffixes" do
+
+        specify "call with no arguments" do
+          parseTest "f();" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "f")
+                  [])
+              ]) -> True
+            _ -> False
+
+        specify "call with one argument" do
+          parseTest "f(x);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "f")
+                  [IdentifierExpression _ "x"])
+              ]) -> True
+            _ -> False
+
+        specify "call with one argument and trailing comma" do
+          parseTest "f(x,);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "f")
+                  [IdentifierExpression _ "x"])
+              ]) -> True
+            _ -> False
+
+        specify "call with two arguments" do
+          parseTest "f(x, y);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "f")
+                  [IdentifierExpression _ "x", IdentifierExpression _ "y"])
+              ]) -> True
+            _ -> False
+
+        specify "call with two arguments and trailing comma" do
+          parseTest "f(x, y,);" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "f")
+                  [IdentifierExpression _ "x", IdentifierExpression _ "y"])
+              ]) -> True
+            _ -> False
 
         specify "subscript" do
           parseTest "[1, 2][0];" \ program -> case program of
@@ -1719,7 +1835,7 @@ spec = do
 
     describe "basic output" do
 
-      specify "string" do
+      specify "text" do
         evalTest "trace (\"hello\");" (== "\"hello\"\n")
 
       specify "integer" do

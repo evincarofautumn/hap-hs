@@ -14,6 +14,7 @@ module Hap.Language
   , Program(..)
   , Sign(..)
   , Signature(..)
+  , Splice(..)
   , Statement(..)
   , UnaryOperator(..)
   , Value(..)
@@ -26,6 +27,7 @@ module Hap.Language
   , nativeName
   , signAnno
   , signatureAnno
+  , spliceAnno
   , statementAnno
   ) where
 
@@ -163,6 +165,7 @@ data Expression anno
   | UnaryExpression anno !UnaryOperator !(Expression anno)
   | BinaryExpression anno !BinaryOperator !(Expression anno) !(Expression anno)
   | IfExpression anno !(Expression anno) !(Expression anno) !(Expression anno)
+  | SpliceExpression anno !(NonEmpty (Splice anno))
   deriving stock (Eq, Functor, Show)
 
 expressionAnno :: Expression anno -> anno
@@ -177,6 +180,17 @@ expressionAnno = \ case
   UnaryExpression      anno _ _   -> anno
   BinaryExpression     anno _ _ _ -> anno
   IfExpression         anno _ _ _ -> anno
+  SpliceExpression     anno _     -> anno
+
+data Splice anno
+  = TextSplice (anno, Text)
+  | ExpressionSplice (Expression anno)
+  deriving stock (Eq, Functor, Show)
+
+spliceAnno :: Splice anno -> anno
+spliceAnno = \ case
+  TextSplice (anno, _)        -> anno
+  ExpressionSplice expression -> expressionAnno expression
 
 -- TODO: Keep structured literals around here instead of just values.
 data Literal anno

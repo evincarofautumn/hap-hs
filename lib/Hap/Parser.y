@@ -7,6 +7,7 @@ module Hap.Parser
   , tokensParser
   ) where
 
+import Control.Arrow ((***))
 import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Semigroup (sconcat)
 import Data.Text (Text)
@@ -19,6 +20,7 @@ import Hap.Language
   , decimalIntegerParts
   , expressionAnno
   , signatureAnno
+  , spliceAnno
   , statementAnno
   )
 import Hap.Parse (lexToken)
@@ -26,6 +28,7 @@ import Hap.ParserMonad (Parser, parseFailure)
 import Hap.Token
   ( DecimalDigit
   , Keyword(..)
+  , Quote(..)
   , SourceSpan(..)
   , tokenAnno
   )
@@ -50,8 +53,12 @@ import qualified Hap.Token as Token
 -- Primitive Tokens
 --------------------------------------------------------------------------------
 
-  word   { Token.WordToken   $$ }
-  digits { Token.DigitsToken (uncurry Language.DecimalIntegerPart -> $$) }
+  word        { Token.WordToken   $$                                          }
+  digits      { Token.DigitsToken (uncurry Language.DecimalIntegerPart -> $$) }
+  text        { Token.TextToken   DoubleQuote DoubleQuote $$                  }
+  left_text   { Token.TextToken   DoubleQuote SingleQuote $$                  }
+  right_text  { Token.TextToken   SingleQuote DoubleQuote $$                  }
+  middle_text { Token.TextToken   SingleQuote SingleQuote $$                  }
 
 --------------------------------------------------------------------------------
 -- Symbol Tokens
@@ -320,51 +327,66 @@ Program :: { Program }
     : '=' Expression { $2 }
 
   Expression :: { Expression }
-    : Boolean            { booleanExpression $1 }
-    | Null               { nullExpression $1 }
-    | '(' Expression ')' { groupExpression $1 $2 $3 }
+    : Term                  { $1 }
+    | Expression CallSuffix { callExpression $1 $2 }
 
-    | Identifier         { identifierExpression $1 }
-    | Number             { $1 }
+    -- TODO: Preserve source spans of parentheses and separators?
+    CallSuffix :: { [Expression] }
+      : '(' sepEnd(',', Expression) ')' { $2 }
 
-    Boolean :: { (SourceSpan, Bool) }
-      : true  { (tokenAnno $1, True) }
-      | false { (tokenAnno $1, False) }
+    Term :: { Expression }
+      : Boolean            { booleanExpression $1 }
+      | Identifier         { identifierExpression $1 }
+      | Null               { nullExpression $1 }
+      | Number             { $1 }
+      | Text               { $1 }
+      | '(' Expression ')' { groupExpression $1 $2 $3 }
 
-    Identifier :: { (SourceSpan, Identifier) }
-      : IdentifierStart many(IdentifierContinue)
-      { identifierParts $1 $2 }
-      | ContextualKeyword some(IdentifierContinue)
-      { identifierParts $1 (NonEmpty.toList $2) }
+      Boolean :: { (SourceSpan, Bool) }
+        : true  { (tokenAnno $1, True) }
+        | false { (tokenAnno $1, False) }
 
-      IdentifierStart :: { (SourceSpan, Text) }
-        : word             { $1 }
-        | SecondaryKeyword { $1 }
+      Identifier :: { (SourceSpan, Identifier) }
+        : IdentifierStart many(IdentifierContinue)
+        { identifierParts $1 $2 }
+        | ContextualKeyword some(IdentifierContinue)
+        { identifierParts $1 (NonEmpty.toList $2) }
 
-      IdentifierContinue :: { (SourceSpan, Text) }
-        : word              { $1 }
-        | PrimaryKeyword    { $1 }
-        | SecondaryKeyword  { $1 }
-        | ContextualKeyword { $1 }
-        | digits            { identifierContinueDigits $1 }
+        IdentifierStart :: { (SourceSpan, Text) }
+          : word             { $1 }
+          | SecondaryKeyword { $1 }
 
-    Null :: { SourceSpan }
-      : null  { tokenAnno $1 }
+        IdentifierContinue :: { (SourceSpan, Text) }
+          : word              { $1 }
+          | PrimaryKeyword    { $1 }
+          | SecondaryKeyword  { $1 }
+          | ContextualKeyword { $1 }
+          | digits            { identifierContinueDigits $1 }
 
-    Number :: { Expression }
-      -- See note [Float Exponents].
-      : opt(Integer) Fraction { floatExpression $1 $2 }
-      | Integer               { integerExpression $1 }
+      Null :: { SourceSpan }
+        : null  { tokenAnno $1 }
 
-      Integer :: { DecimalInteger }
-        : some(digits) { Language.DecimalInteger $1 }
+      Number :: { Expression }
+        -- See note [Float Exponents].
+        : opt(Integer) Fraction { floatExpression $1 $2 }
+        | Integer               { integerExpression $1 }
 
-      Fraction :: { DecimalFraction }
-        : '.' some(digits) { floatFraction $1 $2 }
+        Integer :: { DecimalInteger }
+          : some(digits) { Language.DecimalInteger $1 }
 
-      Sign :: { Sign }
-        : '+' { Language.Plus (tokenAnno $1) }
-        | '-' { Language.Minus (tokenAnno $1) }
+        Fraction :: { DecimalFraction }
+          : '.' some(digits) { floatFraction $1 $2 }
+
+        Sign :: { Sign }
+          : '+' { Language.Plus (tokenAnno $1) }
+          | '-' { Language.Minus (tokenAnno $1) }
+
+      Text :: { Expression }
+        : text                         { textExpression $1 }
+        | left_text Splices right_text { spliceExpression $1 $2 $3 }
+
+        Splices :: { [Splice] }
+          : Expression many(pair(middle_text, Expression)) { textSplices $1 $2 }
 
   -- TODO: Flesh out other types of signatures.
   Signature :: { Signature }
@@ -464,6 +486,10 @@ opt(p)  -- :: { Parser a -> Parser (Maybe a) }
   : p { Just $1 }
   |   { Nothing }
 
+-- Pair of both.
+pair(a, b)  -- :: { Parser a -> Parser b -> Parser (a, b) }
+  : a b { ($1, $2) }
+
 -- Zero or more, right-recursive.
 rmany(p)  -- :: { Parser a -> Parser [a] }
   : p rmany(p) { $1 : $2 }
@@ -523,6 +549,7 @@ type Literal            = Language.Literal            SourceSpan
 type Program            = Language.Program            SourceSpan
 type Sign               = Language.Sign               SourceSpan
 type Signature          = Language.Signature          SourceSpan
+type Splice             = Language.Splice             SourceSpan
 type Statement          = Language.Statement          SourceSpan
 
 type Token              = Token.Token                 SourceSpan
@@ -854,6 +881,15 @@ booleanExpression :: (SourceSpan, Bool) -> Expression
 booleanExpression (pos, value)
   = Language.LiteralExpression pos (Language.BooleanLiteral value)
 
+callExpression :: Expression -> [Expression] -> Expression
+callExpression function arguments
+  = Language.CallExpression pos function arguments
+  where
+    pos = mconcat
+      [ expressionAnno function
+      , foldMap expressionAnno arguments
+      ]
+
 groupExpression :: Token -> Expression -> Token -> Expression
 groupExpression leftParenthesis body rightParenthesis
   = Language.GroupExpression pos body
@@ -936,5 +972,30 @@ integerExpression digits
 
 nullExpression :: SourceSpan -> Expression
 nullExpression pos = Language.LiteralExpression pos Language.NullLiteral
+
+spliceExpression
+  :: (SourceSpan, Text) -> [Splice] -> (SourceSpan, Text) -> Expression
+spliceExpression leftText@(leftTextPos, _) splices rightText@(rightTextPos, _)
+  = Language.SpliceExpression pos
+    (Language.TextSplice leftText :| splices <> [Language.TextSplice rightText])
+  where
+    pos = mconcat
+      [ leftTextPos
+      , foldMap spliceAnno splices
+      , rightTextPos
+      ]
+
+textExpression :: (SourceSpan, Text) -> Expression
+textExpression (pos, text) = Language.LiteralExpression pos
+  $ Language.TextLiteral text
+
+textSplices :: Expression -> [((SourceSpan, Text), Expression)] -> [Splice]
+textSplices initialExpression splices
+  = Language.ExpressionSplice initialExpression
+  : concatMap
+    (unpair . (Language.TextSplice *** Language.ExpressionSplice))
+    splices
+  where
+    unpair (a, b) = [a, b]
 
 }
