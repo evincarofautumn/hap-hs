@@ -156,7 +156,6 @@ import qualified Hap.Token as Token
 
 %nonassoc NO_ELSE
 %nonassoc else
-%right word
 
 %%
 
