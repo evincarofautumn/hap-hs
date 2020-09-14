@@ -48,81 +48,8 @@ spec = do
     describe "'atomic' statement" do
 
       specify "empty" do
-        parseTest "atomic;" \ program -> case program of
-          Right (Program [AtomicStatement _ (EmptyStatement _)]) -> True
-          _ -> False
-
-      specify "empty (space)" do
-        parseTest "atomic ;" \ program -> case program of
-          Right (Program [AtomicStatement _ (EmptyStatement _)]) -> True
-          _ -> False
-
-    describe "block statement" do
-
-      specify "null" do
-        parseTest "{}" \ program -> case program of
-          Right (Program [BlockStatement _ []]) -> True
-          _ -> False
-
-      specify "singleton empty" do
-        parseTest "{;}" \ program -> case program of
-          Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
-          _ -> False
-
-      specify "singleton empty (space before)" do
-        parseTest "{ ;}" \ program -> case program of
-          Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
-          _ -> False
-
-      specify "singleton empty (space after)" do
-        parseTest "{; }" \ program -> case program of
-          Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
-          _ -> False
-
-      specify "singleton empty (space around)" do
-        parseTest "{ ; }" \ program -> case program of
-          Right (Program [BlockStatement _ [EmptyStatement _]]) -> True
-          _ -> False
-
-      specify "two empties" do
-        parseTest "{;;}" \ program -> case program of
-          Right (Program
-            [ BlockStatement _
-              [ EmptyStatement _
-              , EmptyStatement _
-              ]
-            ]) -> True
-          _ -> False
-
-      specify "two empties (space around)" do
-        parseTest "{ ;; }" \ program -> case program of
-          Right (Program
-            [ BlockStatement _
-              [ EmptyStatement _
-              , EmptyStatement _
-              ]
-            ]) -> True
-          _ -> False
-
-      specify "two empties (space around & between)" do
-        parseTest "{ ; ; }" \ program -> case program of
-          Right (Program
-            [ BlockStatement _
-              [ EmptyStatement _
-              , EmptyStatement _
-              ]
-            ]) -> True
-          _ -> False
-
-      specify "singleton empty, null, empty" do
-        parseTest "{;};{}" \ program -> case program of
-          Right (Program
-            [ BlockStatement _
-              [ EmptyStatement _
-              ]
-            , EmptyStatement _
-            , BlockStatement _ []
-            ]) -> True
+        parseTest "atomic {}" \ program -> case program of
+          Right (Program [AtomicStatement _ (BlockStatement _ [])]) -> True
           _ -> False
 
     describe "loop control statements" do
@@ -570,14 +497,6 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "empty list (trailing comma)" do
-          parseTest "[,];" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (LiteralExpression _ (ListLiteral []))
-              ]) -> True
-            _ -> False
-
         specify "singleton list" do
           parseTest "[1];" \ program -> case program of
             Right (Program
@@ -652,14 +571,6 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "null map/set (trailing comma)" do
-          parseTest "({,});" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (GroupExpression _ (LiteralExpression _ (SetLiteral [])))
-              ]) -> True
-            _ -> False
-
         specify "singleton set" do
           parseTest "({1});" \ program -> case program of
             Right (Program
@@ -685,42 +596,42 @@ spec = do
             _ -> False
 
         specify "singleton map" do
-          parseTest "({unquoted_key:value});" \ program -> case program of
+          parseTest "({unquoted key:value});" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (GroupExpression _
                   (LiteralExpression _
                     (MapLiteral
                       [ (,)
-                        (LiteralExpression _ (TextLiteral "unquoted_key"))
+                        (LiteralExpression _ (TextLiteral "unquoted key"))
                         (IdentifierExpression _ "value")
                       ])))
               ]) -> True
             _ -> False
 
         specify "singleton map (space)" do
-          parseTest "({ unquoted_key: value });" \ program -> case program of
+          parseTest "({ unquoted key: value });" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (GroupExpression _
                   (LiteralExpression _
                     (MapLiteral
                       [ (,)
-                        (LiteralExpression _ (TextLiteral "unquoted_key"))
+                        (LiteralExpression _ (TextLiteral "unquoted key"))
                         (IdentifierExpression _ "value")
                       ])))
               ]) -> True
             _ -> False
 
         specify "singleton map (quotes)" do
-          parseTest "({ \"quoted_key\": value });" \ program -> case program of
+          parseTest "({ \"quoted key\": value });" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (GroupExpression _
                   (LiteralExpression _
                     (MapLiteral
                       [ (,)
-                        (LiteralExpression _ (TextLiteral "quoted_key"))
+                        (LiteralExpression _ (TextLiteral "quoted key"))
                         (IdentifierExpression _ "value")
                       ])))
               ]) -> True
@@ -763,7 +674,7 @@ spec = do
             _ -> False
 
         specify "map (expression)" do
-          parseTest "({ (expr_key): value });"
+          parseTest "({ (expr key): value });"
             \ program -> case program of
             Right (Program
               [ ExpressionStatement _
@@ -774,7 +685,7 @@ spec = do
                         -- Note that this is not wrapped in a group expression,
                         -- because bare keys are parsed as text literals, not
                         -- identifiers.
-                        (IdentifierExpression _ "expr_key")
+                        (IdentifierExpression _ "expr key")
                         (IdentifierExpression _ "value")
                       ])))
               ]) -> True
@@ -1283,7 +1194,7 @@ spec = do
     describe "'after' statement" do
 
       specify "basic" do
-        parseTest "after (player.score = 0)\n\ttrace(\"You lost!\");"
+        parseTest "after (player.score = 0) {\n\ttrace(\"You lost!\");\n}"
           \ program -> case program of
           Right (Program
             [ AfterStatement _
@@ -1302,7 +1213,7 @@ spec = do
     describe "'as long as' statement" do
 
       specify "basic" do
-        parseTest "as long as (player.x < 0) {\n\tout_of_bounds();\n}"
+        parseTest "as long as (player.x < 0) {\n\tout of bounds();\n}"
           \ program -> case program of
           Right (Program
             [ AsLongAsStatement _
@@ -1314,7 +1225,7 @@ spec = do
               (BlockStatement _
                 [ (ExpressionStatement _
                   (CallExpression _
-                    (IdentifierExpression _ "out_of_bounds")
+                    (IdentifierExpression _ "out of bounds")
                     []))
                 ])
             ]) -> True
@@ -1323,7 +1234,7 @@ spec = do
     describe "'for' statements" do
 
       specify "for each" do
-        parseTest "for each enemy in (enemies) { hurt(enemy); }"
+        parseTest "for each (enemy : enemies) { hurt(enemy); }"
           \ program -> case program of
           Right (Program
             [ ForEachStatement _ "enemy" (IdentifierExpression _ "enemies")
@@ -1338,7 +1249,7 @@ spec = do
 
       specify "for all" do
         parseTest
-          "for all bullet in (bullets) {\n\
+          "for all (bullet : bullets) {\n\
           \\twhenever (collides(bullet, player)) {\n\
           \\t\tdestroy (bullet);\n\
           \\t\thurt (player);\n\
@@ -1372,32 +1283,22 @@ spec = do
     describe "'function' statements" do
 
       specify "empty" do
-        parseTest "function test();" \ program -> case program of
+        parseTest "function test() {}" \ program -> case program of
           Right (Program
-            [ FunctionStatement _ "test" [] Nothing (EmptyStatement _)
+            [ FunctionStatement _ "test" [] Nothing
+              (BlockStatement _ [EmptyStatement _])
             ]) -> True
           _ -> False
 
       specify "return statement" do
-        parseTest "function test(x) return x;" \ program -> case program of
-          Right (Program
-            [ FunctionStatement _ "test"
-              [Binding _ "x" Nothing Nothing]
-              Nothing
-              (ReturnStatement _
-                (Just (IdentifierExpression _ "x")))
-            ]) -> True
-          _ -> False
-
-      specify "braces and return statement" do
         parseTest "function test(x) { return x; }" \ program -> case program of
           Right (Program
             [ FunctionStatement _ "test"
               [Binding _ "x" Nothing Nothing]
               Nothing
               (BlockStatement _
-                [ (ReturnStatement _
-                  (Just (IdentifierExpression _ "x")))
+                [ ReturnStatement _
+                  (Just (IdentifierExpression _ "x"))
                 ])
             ]) -> True
           _ -> False
@@ -1488,199 +1389,183 @@ spec = do
 
     describe "'if' statements" do
 
-      specify "one-sided with single statement" do
-        parseTest "if (true) good();" \ program -> case program of
+      specify "one-sided" do
+        parseTest "\
+          \if (true) {\n\
+          \\tgood();\n\
+          \}\n\
+          \\&" \ program -> case program of
           Right (Program
             [ IfStatement _
               (LiteralExpression _ (BooleanLiteral True))
-              (ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "good")
-                  []))
+              (BlockStatement _
+                [ ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "good")
+                    [])
+                ])
               Nothing
             ]) -> True
           _ -> False
 
-      specify "two-sided with single statements" do
-        parseTest "if (true) good(); else bad();" \ program -> case program of
+      specify "two-sided" do
+        parseTest "\
+          \if (true) {\n\
+          \\tgood();\n\
+          \} else {\n\
+          \\tbad();\n\
+          \}\n\
+          \\&" \ program -> case program of
           Right (Program
             [ IfStatement _
               (LiteralExpression _ (BooleanLiteral True))
-              (ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "good")
-                  []))
-              (Just
-                (ExpressionStatement _
+              (BlockStatement _
+                [ ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "good")
+                    [])
+                ])
+              (Just (BlockStatement _
+                [ ExpressionStatement _
                   (CallExpression _
                     (IdentifierExpression _ "bad")
-                    [])))
-            ]) -> True
-          _ -> False
-
-      specify "one-sided with block" do
-        parseTest "if (true) { good(); }" \ program -> case program of
-          Right (Program
-            [ IfStatement _
-              (LiteralExpression _ (BooleanLiteral True))
-              (BlockStatement _
-                [ ExpressionStatement _
-                  (CallExpression _
-                    (IdentifierExpression _ "good")
                     [])
-                ])
-              Nothing
-            ]) -> True
-          _ -> False
-
-      specify "two-sided with blocks" do
-        parseTest "if (true) { good(); } else { bad(); }"
-          \ program -> case program of
-          Right (Program
-            [ IfStatement _
-              (LiteralExpression _ (BooleanLiteral True))
-              (BlockStatement _
-                [ ExpressionStatement _
-                  (CallExpression _
-                    (IdentifierExpression _ "good")
-                    [])
-                ])
-              (Just
-                (BlockStatement _
-                  [ (ExpressionStatement _
-                    (CallExpression _
-                      (IdentifierExpression _ "bad")
-                      []))
-                  ]))
+                ]))
             ]) -> True
           _ -> False
 
       specify "one-sided 'else if'" do
-        parseTest "if (true) good(); else if (false) bad();"
+        parseTest "if (true) { good(); } else if (false) { bad(); }"
           \ program -> case program of
           Right (Program
             [ IfStatement _
               (LiteralExpression _ (BooleanLiteral True))
-              (ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "good")
-                  []))
+              (BlockStatement _
+                [ ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "good")
+                    [])
+                ])
               (Just
                 (IfStatement _
                   (LiteralExpression _ (BooleanLiteral False))
-                  (ExpressionStatement _
-                    (CallExpression _
-                      (IdentifierExpression _ "bad")
-                      []))
+                  (BlockStatement _
+                    [ ExpressionStatement _
+                      (CallExpression _
+                        (IdentifierExpression _ "bad")
+                        [])
+                    ])
                   Nothing))
             ]) -> True
           _ -> False
 
       specify "if-else if-else" do
-        parseTest "if (true) good(); else if (false) bad(); else really_bad();"
+        parseTest "\
+          \if (true) {\n\
+          \\tgood();\n\
+          \} else if (false) {\n\
+          \\tbad();\n\
+          \} else {\n\
+          \\treally bad();\n\
+          \}\n\
+          \\&"
           \ program -> case program of
           Right (Program
             [ IfStatement _
               (LiteralExpression _ (BooleanLiteral True))
-              (ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "good")
-                  []))
+              (BlockStatement _
+                [ ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "good")
+                    [])
+                ])
               (Just
                 (IfStatement _
                   (LiteralExpression _ (BooleanLiteral False))
-                  (ExpressionStatement _
-                    (CallExpression _
-                      (IdentifierExpression _ "bad")
-                      []))
-                  (Just
-                    (ExpressionStatement _
+                  (BlockStatement _
+                    [ ExpressionStatement _
                       (CallExpression _
-                        (IdentifierExpression _ "really_bad")
-                        [])))))
-            ]) -> True
-          _ -> False
-
-      -- See note [Dangling Else].
-      specify "dangling else" do
-        parseTest "if (a) if (b) c(); else d();"
-          \ program -> case program of
-          Right (Program
-            [ IfStatement _
-              (IdentifierExpression _ "a")
-              (IfStatement _
-                (IdentifierExpression _ "b")
-                (ExpressionStatement _
-                  (CallExpression _
-                    (IdentifierExpression _ "c")
-                    []))
-                (Just
-                  (ExpressionStatement _
-                    (CallExpression _
-                      (IdentifierExpression _ "d")
-                      []))))
-              Nothing
+                        (IdentifierExpression _ "bad")
+                        [])
+                    ])
+                  (Just
+                    (BlockStatement _
+                      [ (ExpressionStatement _
+                        (CallExpression _
+                          (IdentifierExpression _ "really bad")
+                          []))
+                      ]))))
             ]) -> True
           _ -> False
 
     specify "'on' statements" do
 
-      parseTest "on set (x) trace(\"x was set\");"
+      parseTest "on set (x) { trace(\"x was set\"); }"
         \ program -> case program of
         Right (Program
           [ OnSetStatement _ (NonEmpty ["x"])
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "trace")
-                [LiteralExpression _ (TextLiteral "x was set")]))
+            (BlockStatement _
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "trace")
+                  [LiteralExpression _ (TextLiteral "x was set")])
+              ])
           ]) -> True
         _ -> False
 
-      parseTest "on set (x,) trace(\"x was set\");"
+      parseTest "on set (x,) { trace(\"x was set\"); }"
         \ program -> case program of
         Right (Program
           [ OnSetStatement _ (NonEmpty ["x"])
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "trace")
-                [LiteralExpression _ (TextLiteral "x was set")]))
+            (BlockStatement _
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "trace")
+                  [LiteralExpression _ (TextLiteral "x was set")])
+              ])
           ]) -> True
         _ -> False
 
-      parseTest "on set (x, y) trace(\"x or y was set\");"
+      parseTest "on set (x, y) { trace(\"x or y was set\"); }"
         \ program -> case program of
         Right (Program
           [ OnSetStatement _ (NonEmpty ["x", "y"])
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "trace")
-                [LiteralExpression _ (TextLiteral "x or y was set")]))
+            (BlockStatement _
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "trace")
+                  [LiteralExpression _ (TextLiteral "x or y was set")])
+              ])
           ]) -> True
         _ -> False
 
-      parseTest "on change (x) trace(\"x was changed\");"
+      parseTest "on change (x) { trace(\"x was changed\"); }"
         \ program -> case program of
         Right (Program
           [ OnChangeStatement _ (NonEmpty ["x"])
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "trace")
-                [LiteralExpression _ (TextLiteral "x was changed")]))
+            (BlockStatement _
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "trace")
+                  [LiteralExpression _ (TextLiteral "x was changed")])
+              ])
           ]) -> True
         _ -> False
 
-      parseTest "on change (x,) trace(\"x was changed\");"
+      parseTest "on change (x,) { trace(\"x was changed\"); }"
         \ program -> case program of
         Right (Program
           [ OnChangeStatement _ (NonEmpty ["x"])
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "trace")
-                [LiteralExpression _ (TextLiteral "x was changed")]))
+            (BlockStatement _
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "trace")
+                  [LiteralExpression _ (TextLiteral "x was changed")])
+              ])
           ]) -> True
         _ -> False
 
-      parseTest "on change (x, y) trace(\"x or y was changed\");"
+      parseTest "on change (x, y) { trace(\"x or y was changed\"); }"
         \ program -> case program of
         Right (Program
           [ OnChangeStatement _ (NonEmpty ["x", "y"])
@@ -1802,16 +1687,16 @@ spec = do
     describe "'whenever' statement" do
 
       specify "basic" do
-        parseTest "whenever (score > high_score)\n\tshow_high_score();"
+        parseTest "whenever (score > high score) {\n\tshow high score();\n}"
           \ program -> case program of
           Right (Program
             [ WheneverStatement _
               (BinaryExpression _ BinaryGreater
                 (IdentifierExpression _ "score")
-                (IdentifierExpression _ "high_score"))
+                (IdentifierExpression _ "high score"))
               (ExpressionStatement _
                 (CallExpression _
-                  (IdentifierExpression _ "show_high_score")
+                  (IdentifierExpression _ "show high score")
                   []))
             ]) -> True
           _ -> False
@@ -1819,15 +1704,17 @@ spec = do
     describe "'while' statement" do
 
       specify "basic" do
-        parseTest "while (true)\n\tplay();"
+        parseTest "while (true) {\n\tplay();\n}"
           \ program -> case program of
           Right (Program
             [ WhileStatement _
               (LiteralExpression _ (BooleanLiteral True))
-              (ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "play")
-                  []))
+              (BlockStatement _
+                [ ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "play")
+                    [])
+                ])
             ]) -> True
           _ -> False
 
@@ -1878,7 +1765,7 @@ spec = do
       specify "single" do
         evalTest "\
           \var x = 0;\n\
-          \on set (x) output (\"x was set to \", x, \"\\n\");\n\
+          \on set (x) { output (\"x was set to \", x, \"\\n\"); }\n\
           \x <- 0;\n\
           \x <- 1;\n\
           \x <- 0;\n\
@@ -1894,7 +1781,7 @@ spec = do
       specify "single" do
         evalTest "\
           \var x = 0;\n\
-          \on change (x) output (\"x was changed to \", x, \"\\n\");\n\
+          \on change (x) { output (\"x was changed to \", x, \"\\n\"); }\n\
           \x <- 0;\n\
           \x <- 1;\n\
           \x <- 0;\n\

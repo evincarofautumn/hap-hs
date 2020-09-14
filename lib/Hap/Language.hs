@@ -466,7 +466,6 @@ parseProgram path source = Parsec.parse programParser path source
         <*> Parsec.optionMaybe (symbol ":" *> signatureParser)
         <*> statementParser
 
-      -- See note [Dangling Else].
 {-
       , IfStatement
         <$> (getSourcePos <* keyword "if")
@@ -837,31 +836,6 @@ parseProgram path source = Parsec.parse programParser path source
 --       let _x3 = x3 in
 --         _x2 op2 _x3 and
 --         ...
-
--- Note [Dangling Else]:
---
--- The "dangling else" is resolved as in C, bound to the nearest 'if'.
--- Unfortunately, this can cause misleading code:
---
---     if (a)
---         if (b)
---             c ();
---     else
---         d ();
---
--- This is parsed as:
---
---     if (a) {
---         if (b) {
---             c ();
---         } else {
---             d ();
---         }
---     }
---
--- TODO: The compiler should add a warning when a control statement is nested
--- directly inside another control statement without being wrapped in a block
--- to help avoid this.
 
 -- The dynamic representation of a Hap value.
 --

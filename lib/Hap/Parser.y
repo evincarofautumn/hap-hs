@@ -8,6 +8,7 @@ module Hap.Parser
   ) where
 
 import Control.Arrow ((***))
+import Data.Function (on)
 import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Semigroup (sconcat)
 import Data.Text (Text)
@@ -175,7 +176,6 @@ Program :: { Program }
     : AtomicStatement     { $1 }
     | AfterStatement      { $1 }
     | AsLongAsStatement   { $1 }
-    | BlockStatement      { $1 }
     | EmptyStatement      { $1 }
     | ForAllStatement     { $1 }
     | ForEachStatement    { $1 }
@@ -197,20 +197,16 @@ Program :: { Program }
     | ExpressionStatement { $1 }
 
     AtomicStatement :: { Statement }
-      : atomic Statement
+      : atomic Block
       { atomicStatement $1 $2 }
 
     AfterStatement :: { Statement }
-      : after '(' Expression ')' Statement
+      : after '(' Expression ')' Block
       { afterStatement $1 $2 $3 $4 $5 }
 
     AsLongAsStatement
-      : as long as '(' Expression ')' Statement
+      : as long as '(' Expression ')' Block
       { asLongAsStatement $1 $2 $3 $4 $5 $6 $7 }
-
-    BlockStatement :: { Statement }
-      : '{' many(Statement) '}'
-      { blockStatement $1 $2 $3 }
 
     EmptyStatement :: { Statement }
       : ';'
@@ -218,12 +214,12 @@ Program :: { Program }
 
     -- TODO: See note [Name-Expression Separator in Quantifiers].
     ForAllStatement :: { Statement }
-      : for all '(' Identifier ':' Expression ')' Statement
+      : for all '(' Identifier ':' Expression ')' Block
       { forAllStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
     -- TODO: See note [Name-Expression Separator in Quantifiers].
     ForEachStatement :: { Statement }
-      : for each '(' Identifier ':' Expression ')' Statement
+      : for each '(' Identifier ':' Expression ')' Block
       { forEachStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
     FunctionStatement :: { Statement }
@@ -242,15 +238,15 @@ Program :: { Program }
       -- See [Binding].
 
     IfStatement :: { Statement }
-      : if '(' Expression ')' Statement
+      : if '(' Expression ')' Block
         %prec NO_ELSE
         { ifStatement $1 $2 $3 $4 $5 Nothing }
-      | if '(' Expression ')' Statement ElseClause
+      | if '(' Expression ')' Block ElseClause
         { ifStatement $1 $2 $3 $4 $5 (Just $6) }
 
       ElseClause :: { (SourceSpan, Statement) }
-        : else Statement
-        { elseClause $1 $2 }
+        : else Block       { elseClause $1 $2 }
+        | else IfStatement { elseClause $1 $2 }
 
     LastStatement :: { Statement }
       : last opt(Identifier) ';'
@@ -262,20 +258,20 @@ Program :: { Program }
 
     -- TODO: See note [Name-Expression Separator in Quantifiers].
     OnAddStatement :: { Statement }
-      : on add '(' Identifier ':' Expression ')' Statement
+      : on add '(' Identifier ':' Expression ')' Block
       { onAddStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
     OnChangeStatement :: { Statement }
-      : on change '(' sepEnd1(',', Identifier) ')' Statement
+      : on change '(' sepEnd1(',', Identifier) ')' Block
       { onChangeStatement $1 $2 $3 $4 $5 $6 }
 
     -- TODO: See note [Name-Expression Separator in Quantifiers].
     OnRemoveStatement :: { Statement }
-      : on remove '(' Identifier ':' Expression ')' Statement
+      : on remove '(' Identifier ':' Expression ')' Block
       { onRemoveStatement $1 $2 $3 $4 $5 $6 $7 $8 }
 
     OnSetStatement :: { Statement }
-      : on set '(' sepEnd1(',', Identifier) ')' Statement
+      : on set '(' sepEnd1(',', Identifier) ')' Block
       { onSetStatement $1 $2 $3 $4 $5 $6 }
 
     RedoStatement :: { Statement }
@@ -293,15 +289,15 @@ Program :: { Program }
       -- See [Binding].
 
     WhenStatement :: { Statement }
-      : when '(' Expression ')' Statement
+      : when '(' Expression ')' Block
       { whenStatement $1 $2 $3 $4 $5 }
 
     WheneverStatement :: { Statement }
-      : whenever '(' Expression ')' Statement
+      : whenever '(' Expression ')' Block
       { wheneverStatement $1 $2 $3 $4 $5 }
 
     WhileStatement :: { Statement }
-      : while '(' Expression ')' Statement
+      : while '(' Expression ')' Block
       { whileStatement $1 $2 $3 $4 $5 }
 
     ExpressionStatement :: { Statement }
@@ -309,6 +305,9 @@ Program :: { Program }
       { expressionStatement $1 $2 }
 
       -- See [Expression].
+
+    Block :: { Statement }
+      : '{' many(Statement) '}' { blockStatement $1 $2 $3 }
 
   Binding
     :: { Binding }
@@ -337,8 +336,11 @@ Program :: { Program }
     Term :: { Expression }
       : Boolean            { booleanExpression $1 }
       | Identifier         { identifierExpression $1 }
+      | List               { $1 }
+      | Map                { $1 }
       | Null               { nullExpression $1 }
       | Number             { $1 }
+      | Set                { $1 }
       | Text               { $1 }
       | '(' Expression ')' { groupExpression $1 $2 $3 }
 
@@ -363,6 +365,26 @@ Program :: { Program }
           | ContextualKeyword { $1 }
           | digits            { identifierContinueDigits $1 }
 
+      -- TODO: Preserve source spans of separators?
+      List :: { Expression }
+        : '[' sepEnd(',', Expression) ']' { listExpression $1 $2 $3 }
+
+      -- Note that 'Map' uses 'sepEnd1' so that '{}' is parsed unambiguously as
+      -- an empty set rather than an empty map.
+      --
+      -- TODO: Preserve source spans of separators?
+      Map :: { Expression }
+        : '{' sepEnd1(',', KeyValuePair) '}' { mapExpression $1 $2 $3 }
+
+        KeyValuePair :: { (Expression, Expression) }
+          : Key ':' Expression { ($1, $3) }
+
+          Key :: { Expression }
+            : Identifier         { identifierKey $1 }
+            | Text               { $1 }
+            -- TODO: Preserve source spans of parentheses.
+            | '(' Expression ')' { $2 }
+
       Null :: { SourceSpan }
         : null  { tokenAnno $1 }
 
@@ -380,6 +402,9 @@ Program :: { Program }
         Sign :: { Sign }
           : '+' { Language.Plus (tokenAnno $1) }
           | '-' { Language.Minus (tokenAnno $1) }
+
+      Set :: { Expression }
+        : '{' sepEnd(',', Expression) '}' { setExpression $1 $2 $3 }
 
       Text :: { Expression }
         : text                         { textExpression $1 }
@@ -970,8 +995,45 @@ integerExpression digits
   where
     pos = foldMap decimalIntegerPartAnno $ decimalIntegerParts digits
 
+listExpression :: Token -> [Expression] -> Token -> Expression
+listExpression leftBracket elements rightBracket
+  = Language.LiteralExpression pos
+  $ Language.ListLiteral elements
+  where
+    pos = mconcat
+      [ tokenAnno leftBracket
+      , foldMap expressionAnno elements
+      , tokenAnno rightBracket
+      ]
+
+mapExpression
+  :: Token -> NonEmpty (Expression, Expression) -> Token -> Expression
+mapExpression leftBrace keyValuePairs rightBrace
+  = Language.LiteralExpression pos
+  $ Language.MapLiteral (NonEmpty.toList keyValuePairs)
+  where
+    pos = mconcat
+      [ tokenAnno leftBrace
+      , foldMap (uncurry ((<>) `on` expressionAnno)) keyValuePairs
+      , tokenAnno rightBrace
+      ]
+
+identifierKey :: (SourceSpan, Identifier) -> Expression
+identifierKey = textExpression . fmap Language.identifierText
+
 nullExpression :: SourceSpan -> Expression
 nullExpression pos = Language.LiteralExpression pos Language.NullLiteral
+
+setExpression :: Token -> [Expression] -> Token -> Expression
+setExpression leftBrace elements rightBrace
+  = Language.LiteralExpression pos
+  $ Language.SetLiteral elements
+  where
+    pos = mconcat
+      [ tokenAnno leftBrace
+      , foldMap expressionAnno elements
+      , tokenAnno rightBrace
+      ]
 
 spliceExpression
   :: (SourceSpan, Text) -> [Splice] -> (SourceSpan, Text) -> Expression
