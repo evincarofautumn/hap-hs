@@ -42,6 +42,7 @@ import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import Data.Text (Text)
+import Data.Text.Prettyprint.Doc (Pretty(..))
 import GHC.Exts (IsString(..))
 import Hap.Runtime (Env(..))
 import Hap.Token (DecimalDigit, decimalDigitChar)
@@ -51,6 +52,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
+import qualified Data.Text.Prettyprint.Doc as Pretty
 import qualified SDL
 
 --------------------------------------------------------------------------------
@@ -264,11 +266,23 @@ decimalIntegerString
   . decimalIntegerParts
 
 data UnaryOperator
-  = UnaryEach
+  = UnaryAll
+  | UnaryEach
+  | UnaryEqual
   | UnaryEvery
+  | UnaryGreater
+  | UnaryHowMany
+  | UnaryLess
   | UnaryMinus
+  | UnaryNone
   | UnaryNot
+  | UnaryNotEqual
+  | UnaryNotGreater
+  | UnaryNotLess
   | UnaryPlus
+  | UnarySome
+  | UnaryWhere
+  | UnaryWhich
   deriving stock (Eq, Show)
 
 -- Note [Each and Every]:
@@ -313,6 +327,8 @@ data UnaryOperator
 -- TODO: The compiler should perform this translation during a desugaring step.
 
 data BinaryOperator
+  -- TODO: Exponent
+
   -- Multiplicative
   = BinaryMultiply
   | BinaryDivide
@@ -328,12 +344,10 @@ data BinaryOperator
   | BinaryEqual
   | BinaryNotEqual
   | BinaryElement
-  | BinaryNotElement
   -- Conjunctive
   | BinaryAnd
   -- Disjunctive
   | BinaryOr
-  | BinaryXor
   -- Implicative
   | BinaryImplies
   -- Assignment
@@ -369,6 +383,9 @@ instance IsString Identifier where
     . filter (not . Text.null)
     . Text.split (== ' ')
     . fromString
+
+instance Pretty Identifier where
+  pretty = pretty . show
 
 --------------------------------------------------------------------------------
 -- Parsing
@@ -906,32 +923,26 @@ instance Ord Value where
       ]
 -}
 
-{-
-instance Show Value where
-  show = \ case
+instance Pretty Value where
+  pretty = \ case
     BooleanValue value -> if value then "true" else "false"
-    FloatValue value -> show value
-    IntegerValue value -> show value
-    TextValue value -> show $ Text.unpack value
+    FloatValue value -> pretty value
+    IntegerValue value -> pretty value
+    TextValue value -> pretty value
     NullValue -> "null"
-    ListValue elements -> concat
-      [ "["
-      , intercalate ", " $ map show elements
-      , "]"
-      ]
-    MapValue pairs -> concat
-      [ "{ "
-      , intercalate ", " $ map showPair $ Map.toList pairs
-      , " }"
-      ]
+    ListValue elements -> Pretty.brackets $ Pretty.hsep
+      $ Pretty.punctuate Pretty.comma
+      $ pretty <$> elements
+    MapValue pairs -> Pretty.braces $ Pretty.hsep
+      $ Pretty.punctuate Pretty.comma
+      $ prettyPair <$> Map.toList pairs
       where
-        showPair (key, value) = concat [show key, ": ", show value]
-    SetValue elements -> concat
-      [ "{ "
-      , intercalate ", " $ map show $ Set.toList elements
-      , " }"
-      ]
-    NativeValue n -> show $ nativeName n
+        prettyPair (key, value)
+          = Pretty.hsep [pretty key, "=>", pretty value]
+    SetValue elements -> Pretty.braces $ Pretty.hsep
+      $ Pretty.punctuate Pretty.comma
+      $ pretty <$> Set.toList elements
+    NativeValue n -> pretty $ nativeName n
 {-
     FunctionValue name parameters result body _compiled -> concat
       [ "function"
@@ -958,7 +969,6 @@ instance Show Value where
             Nothing -> ""
           ]
 -}
--}
 
 newtype NativeId = NativeId Int
   deriving stock (Eq, Ord, Show)
@@ -973,7 +983,7 @@ native =
       arg -> show arg
     pure NullValue
   , (,) "trace" \ env args -> do
-    traverse_ (envOutputStr env . (++ "\n") . show) args
+    traverse_ (envOutputStr env . (++ "\n") . show . pretty) args
     pure NullValue
   , (,) "graphics_background_set" \ env args -> case args of
     [IntegerValue r, IntegerValue g, IntegerValue b] -> case envGraphicsChan env of

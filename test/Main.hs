@@ -159,11 +159,11 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "contextual => keyword" do
+        specify "contextual => name(1)" do
           parseTest "false;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ (BooleanLiteral False))
+                (IdentifierExpression _ "false")
               ]) -> True
             _ -> False
 
@@ -189,7 +189,7 @@ spec = do
           parseTest "true;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ (BooleanLiteral True))
+                (IdentifierExpression _ "true")
               ]) -> True
             _ -> False
 
@@ -197,7 +197,7 @@ spec = do
           parseTest "false;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ (BooleanLiteral False))
+                (IdentifierExpression _ "false")
               ]) -> True
             _ -> False
 
@@ -476,7 +476,7 @@ spec = do
           parseTest "null;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (LiteralExpression _ NullLiteral)
+                (IdentifierExpression _ "null")
               ]) -> True
             _ -> False
 
@@ -596,21 +596,7 @@ spec = do
             _ -> False
 
         specify "singleton map" do
-          parseTest "({unquoted key:value});" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (GroupExpression _
-                  (LiteralExpression _
-                    (MapLiteral
-                      [ (,)
-                        (LiteralExpression _ (TextLiteral "unquoted key"))
-                        (IdentifierExpression _ "value")
-                      ])))
-              ]) -> True
-            _ -> False
-
-        specify "singleton map (space)" do
-          parseTest "({ unquoted key: value });" \ program -> case program of
+          parseTest "({ unquoted key => value });" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (GroupExpression _
@@ -624,7 +610,7 @@ spec = do
             _ -> False
 
         specify "singleton map (quotes)" do
-          parseTest "({ \"quoted key\": value });" \ program -> case program of
+          parseTest "({ \"quoted key\" => value });" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (GroupExpression _
@@ -638,7 +624,7 @@ spec = do
             _ -> False
 
         specify "map" do
-          parseTest "({ key1: value1, key2: value2 });"
+          parseTest "({ key1 => value1, key2 => value2 });"
             \ program -> case program of
             Right (Program
               [ ExpressionStatement _
@@ -656,7 +642,7 @@ spec = do
             _ -> False
 
         specify "map (quotes)" do
-          parseTest "({ \"key1\": value1, key2: value2 });"
+          parseTest "({ \"key1\" => value1, key2 => value2 });"
             \ program -> case program of
             Right (Program
               [ ExpressionStatement _
@@ -674,7 +660,7 @@ spec = do
             _ -> False
 
         specify "map (expression)" do
-          parseTest "({ (expr key): value });"
+          parseTest "({ (expr key) => value });"
             \ program -> case program of
             Right (Program
               [ ExpressionStatement _
@@ -885,56 +871,12 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "each variable" do
-          parseTest "each xs;" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (UnaryExpression _ UnaryEach
-                  (IdentifierExpression _ "xs"))
-              ]) -> True
-            _ -> False
-
-        specify "every variable" do
-          parseTest "every xs;" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (UnaryExpression _ UnaryEvery
-                  (IdentifierExpression _ "xs"))
-              ]) -> True
-            _ -> False
-
         specify "not boolean" do
-          parseTest "not true;" \ program -> case program of
+          parseTest "~true;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (UnaryExpression _ UnaryNot
-                  (LiteralExpression _ (BooleanLiteral True)))
-              ]) -> True
-            _ -> False
-
-        -- Identifier with keyword prefix shouldn't treat keyword as operator.
-
-        specify "name whose first part begins with 'each'" do
-          parseTest "eachxs;" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (IdentifierExpression _ "eachxs")
-              ]) -> True
-            _ -> False
-
-        specify "name whose first part begins with 'every'" do
-          parseTest "everyxs;" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (IdentifierExpression _ "everyxs")
-              ]) -> True
-            _ -> False
-
-        specify "name whose first part begins with 'not'" do
-          parseTest "nottrue;" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (IdentifierExpression _ "nottrue")
+                  (IdentifierExpression _ "true"))
               ]) -> True
             _ -> False
 
@@ -955,36 +897,6 @@ spec = do
                 (BinaryExpression _ BinaryAdd
                   (LiteralExpression _ (IntegerLiteral 2))
                   (LiteralExpression _ (IntegerLiteral 3)))
-              ]) -> True
-            _ -> False
-
-        -- Multi-token operators should not cause ambiguity.
-
-        specify "multi-word operator 'is in'" do
-          parseTest "2 is in [1, 2];" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (BinaryExpression _ BinaryElement
-                  (LiteralExpression _ (IntegerLiteral 2))
-                  (LiteralExpression _
-                    (ListLiteral
-                      [ LiteralExpression _ (IntegerLiteral 1)
-                      , LiteralExpression _ (IntegerLiteral 2)
-                      ])))
-              ]) -> True
-            _ -> False
-
-        specify "multi-word operator 'is not in'" do
-          parseTest "3 is not in [1, 2];" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (BinaryExpression _ BinaryNotElement
-                  (LiteralExpression _ (IntegerLiteral 3))
-                  (LiteralExpression _
-                    (ListLiteral
-                      [ LiteralExpression _ (IntegerLiteral 1)
-                      , LiteralExpression _ (IntegerLiteral 2)
-                      ])))
               ]) -> True
             _ -> False
 
@@ -1286,7 +1198,7 @@ spec = do
         parseTest "function test() {}" \ program -> case program of
           Right (Program
             [ FunctionStatement _ "test" [] Nothing
-              (BlockStatement _ [EmptyStatement _])
+              (BlockStatement _ [])
             ]) -> True
           _ -> False
 
@@ -1397,7 +1309,7 @@ spec = do
           \\&" \ program -> case program of
           Right (Program
             [ IfStatement _
-              (LiteralExpression _ (BooleanLiteral True))
+              (IdentifierExpression _ "true")
               (BlockStatement _
                 [ ExpressionStatement _
                   (CallExpression _
@@ -1418,7 +1330,7 @@ spec = do
           \\&" \ program -> case program of
           Right (Program
             [ IfStatement _
-              (LiteralExpression _ (BooleanLiteral True))
+              (IdentifierExpression _ "true")
               (BlockStatement _
                 [ ExpressionStatement _
                   (CallExpression _
@@ -1439,7 +1351,7 @@ spec = do
           \ program -> case program of
           Right (Program
             [ IfStatement _
-              (LiteralExpression _ (BooleanLiteral True))
+              (IdentifierExpression _ "true")
               (BlockStatement _
                 [ ExpressionStatement _
                   (CallExpression _
@@ -1448,7 +1360,7 @@ spec = do
                 ])
               (Just
                 (IfStatement _
-                  (LiteralExpression _ (BooleanLiteral False))
+                  (IdentifierExpression _ "false")
                   (BlockStatement _
                     [ ExpressionStatement _
                       (CallExpression _
@@ -1472,7 +1384,7 @@ spec = do
           \ program -> case program of
           Right (Program
             [ IfStatement _
-              (LiteralExpression _ (BooleanLiteral True))
+              (IdentifierExpression _ "true")
               (BlockStatement _
                 [ ExpressionStatement _
                   (CallExpression _
@@ -1481,7 +1393,7 @@ spec = do
                 ])
               (Just
                 (IfStatement _
-                  (LiteralExpression _ (BooleanLiteral False))
+                  (IdentifierExpression _ "false")
                   (BlockStatement _
                     [ ExpressionStatement _
                       (CallExpression _
@@ -1569,10 +1481,12 @@ spec = do
         \ program -> case program of
         Right (Program
           [ OnChangeStatement _ (NonEmpty ["x", "y"])
-            (ExpressionStatement _
-              (CallExpression _
-                (IdentifierExpression _ "trace")
-                [LiteralExpression _ (TextLiteral "x or y was changed")]))
+            (BlockStatement _
+              [ ExpressionStatement _
+                (CallExpression _
+                  (IdentifierExpression _ "trace")
+                  [LiteralExpression _ (TextLiteral "x or y was changed")])
+              ])
           ]) -> True
         _ -> False
 
@@ -1694,10 +1608,12 @@ spec = do
               (BinaryExpression _ BinaryGreater
                 (IdentifierExpression _ "score")
                 (IdentifierExpression _ "high score"))
-              (ExpressionStatement _
-                (CallExpression _
-                  (IdentifierExpression _ "show high score")
-                  []))
+              (BlockStatement _
+                [(ExpressionStatement _
+                  (CallExpression _
+                    (IdentifierExpression _ "show high score")
+                    []))
+                ])
             ]) -> True
           _ -> False
 
@@ -1708,7 +1624,7 @@ spec = do
           \ program -> case program of
           Right (Program
             [ WhileStatement _
-              (LiteralExpression _ (BooleanLiteral True))
+              (IdentifierExpression _ "true")
               (BlockStatement _
                 [ ExpressionStatement _
                   (CallExpression _
@@ -1766,9 +1682,9 @@ spec = do
         evalTest "\
           \var x = 0;\n\
           \on set (x) { output (\"x was set to \", x, \"\\n\"); }\n\
-          \x <- 0;\n\
-          \x <- 1;\n\
-          \x <- 0;\n\
+          \x := 0;\n\
+          \x := 1;\n\
+          \x := 0;\n\
           \\&"
           (== "\
             \x was set to 0\n\
@@ -1782,9 +1698,9 @@ spec = do
         evalTest "\
           \var x = 0;\n\
           \on change (x) { output (\"x was changed to \", x, \"\\n\"); }\n\
-          \x <- 0;\n\
-          \x <- 1;\n\
-          \x <- 0;\n\
+          \x := 0;\n\
+          \x := 1;\n\
+          \x := 0;\n\
           \\&"
           (== "\
             \x was changed to 1\n\
@@ -1797,11 +1713,11 @@ spec = do
         evalTest "\
          \var x = 1;\n\
          \whenever (x = 2) { output (\"beep\\n\"); }\n\
-         \x <- 3;\n\
-         \x <- 2;\n\
-         \x <- 3;\n\
-         \x <- 2;\n\
-         \x <- 2;\n\
+         \x := 3;\n\
+         \x := 2;\n\
+         \x := 3;\n\
+         \x := 2;\n\
+         \x := 2;\n\
          \\&"
          (== "\
            \beep\n\

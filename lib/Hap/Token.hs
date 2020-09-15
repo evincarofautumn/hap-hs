@@ -150,6 +150,9 @@ data Token anno
   -- | @:@
   | ColonToken anno
 
+  -- | @:=@
+  | ColonEqualToken anno
+
   -- | @;@
   | SemicolonToken anno
 
@@ -164,6 +167,9 @@ data Token anno
 
   -- | @=@
   | EqualToken anno
+
+  -- | @=>@
+  | RightDoubleArrowToken anno
 
   -- | @>@
   | GreaterThanToken anno
@@ -229,11 +235,13 @@ instance Pretty (Token anno) where
     DotToken{}                     -> "."
     SlashToken{}                   -> "/"
     ColonToken{}                   -> ":"
+    ColonEqualToken{}              -> ":="
     SemicolonToken{}               -> ";"
     LessThanToken{}                -> "<"
     LessThanOrEqualToken{}         -> "<="
     NotEqualToken{}                -> "<>"
     EqualToken{}                   -> "="
+    RightDoubleArrowToken{}        -> "=>"
     GreaterThanToken{}             -> ">"
     GreaterThanOrEqualToken{}      -> ">="
     QuestionToken{}                -> "?"
@@ -297,30 +305,23 @@ data Keyword
   | EachKeyword
   | ElseKeyword
   | EntityKeyword
-  | EveryKeyword
-  | FalseKeyword
   | ForKeyword
   | FunctionKeyword
   | HasKeyword
   | IfKeyword
-  | InKeyword
   | LastKeyword
   | LongKeyword
   | NeedsKeyword
   | NextKeyword
-  | NullKeyword
   | OnKeyword
   | RedoKeyword
   | RemoveKeyword
   | ReturnKeyword
   | SetKeyword
-  | TrueKeyword
   | UntilKeyword
   | VarKeyword
   | WhenKeyword
   | WheneverKeyword
-  | WhereKeyword
-  | WhichKeyword
   | WhileKeyword
   deriving stock (Eq, Show)
 
@@ -337,30 +338,23 @@ instance Pretty Keyword where
     EachKeyword     -> "each"
     ElseKeyword     -> "else"
     EntityKeyword   -> "entity"
-    EveryKeyword    -> "every"
-    FalseKeyword    -> "false"
     ForKeyword      -> "for"
     FunctionKeyword -> "function"
     HasKeyword      -> "has"
     IfKeyword       -> "if"
-    InKeyword       -> "in"
     LastKeyword     -> "last"
     LongKeyword     -> "long"
     NeedsKeyword    -> "needs"
     NextKeyword     -> "next"
-    NullKeyword     -> "null"
     OnKeyword       -> "on"
     RedoKeyword     -> "redo"
     RemoveKeyword   -> "remove"
     ReturnKeyword   -> "return"
     SetKeyword      -> "set"
-    TrueKeyword     -> "true"
     UntilKeyword    -> "until"
     VarKeyword      -> "var"
     WhenKeyword     -> "when"
     WheneverKeyword -> "whenever"
-    WhereKeyword    -> "where"
-    WhichKeyword    -> "which"
     WhileKeyword    -> "while"
 
 tokenAnno :: Token anno -> anno
@@ -383,11 +377,13 @@ tokenAnno = \ case
   DotToken                anno      -> anno
   SlashToken              anno      -> anno
   ColonToken              anno      -> anno
+  ColonEqualToken         anno      -> anno
   SemicolonToken          anno      -> anno
   LessThanToken           anno      -> anno
   LessThanOrEqualToken    anno      -> anno
   NotEqualToken           anno      -> anno
   EqualToken              anno      -> anno
+  RightDoubleArrowToken   anno      -> anno
   GreaterThanToken        anno      -> anno
   GreaterThanOrEqualToken anno      -> anno
   QuestionToken           anno      -> anno

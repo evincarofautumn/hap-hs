@@ -226,6 +226,7 @@ data Terminal
   | DotTerminal
   | SlashTerminal
   | ColonTerminal
+  | ColonEqualTerminal
   | SemicolonTerminal
   | LessThanTerminal
   | LessThanOrEqualTerminal
@@ -257,30 +258,23 @@ data Terminal
   | EachTerminal
   | ElseTerminal
   | EntityTerminal
-  | EveryTerminal
-  | FalseTerminal
   | ForTerminal
   | FunctionTerminal
   | HasTerminal
   | IfTerminal
-  | InTerminal
   | LastTerminal
   | LongTerminal
   | NeedsTerminal
   | NextTerminal
-  | NullTerminal
   | OnTerminal
   | RedoTerminal
   | RemoveTerminal
   | ReturnTerminal
   | SetTerminal
-  | TrueTerminal
   | UntilTerminal
   | VarTerminal
   | WhenTerminal
   | WheneverTerminal
-  | WhereTerminal
-  | WhichTerminal
   | WhileTerminal
 
 instance Pretty Terminal where
@@ -306,6 +300,7 @@ instance Pretty Terminal where
     DotTerminal                -> "dot / period / fullstop ('.')"
     SlashTerminal              -> "slash ('/')"
     ColonTerminal              -> "colon (':')"
+    ColonEqualTerminal         -> "colon equal (':=')"
     SemicolonTerminal          -> "semicolon (';')"
     LessThanTerminal           -> "less-than sign ('<')"
     LessThanOrEqualTerminal    -> "less-than or equal sign ('<=')"
@@ -337,32 +332,26 @@ instance Pretty Terminal where
     EachTerminal     -> "'each' keyword"
     ElseTerminal     -> "'else' keyword"
     EntityTerminal   -> "'entity' keyword"
-    EveryTerminal    -> "'every' keyword"
-    FalseTerminal    -> "'false' keyword"
     ForTerminal      -> "'for' keyword"
     FunctionTerminal -> "'function' keyword"
     HasTerminal      -> "'has' keyword"
     IfTerminal       -> "'if' keyword"
-    InTerminal       -> "'in' keyword"
     LastTerminal     -> "'last' keyword"
     LongTerminal     -> "'long' keyword"
     NeedsTerminal    -> "'needs' keyword"
     NextTerminal     -> "'next' keyword"
-    NullTerminal     -> "'null' keyword"
     OnTerminal       -> "'on' keyword"
     RedoTerminal     -> "'redo' keyword"
     RemoveTerminal   -> "'remove' keyword"
     ReturnTerminal   -> "'return' keyword"
     SetTerminal      -> "'set' keyword"
-    TrueTerminal     -> "'true' keyword"
     UntilTerminal    -> "'until' keyword"
     VarTerminal      -> "'var' keyword"
     WhenTerminal     -> "'when' keyword"
     WheneverTerminal -> "'whenever' keyword"
-    WhereTerminal    -> "'where' keyword"
-    WhichTerminal    -> "'which' keyword"
     WhileTerminal    -> "'while' keyword"
 
+-- TODO: Test that this covers all terminals in the grammar.
 getTerminal :: String -> Terminal
 getTerminal = \ case
 
@@ -385,6 +374,7 @@ getTerminal = \ case
   "'.'"      -> DotTerminal
   "'/'"      -> SlashTerminal
   "':'"      -> ColonTerminal
+  "':='"     -> ColonEqualTerminal
   "';'"      -> SemicolonTerminal
   "'<'"      -> LessThanTerminal
   "'<='"     -> LessThanOrEqualTerminal
@@ -416,30 +406,23 @@ getTerminal = \ case
   "each"     -> EachTerminal
   "else"     -> ElseTerminal
   "entity"   -> EntityTerminal
-  "every"    -> EveryTerminal
-  "false"    -> FalseTerminal
   "for"      -> ForTerminal
   "function" -> FunctionTerminal
   "has"      -> HasTerminal
   "if"       -> IfTerminal
-  "in"       -> InTerminal
   "last"     -> LastTerminal
   "long"     -> LongTerminal
   "needs"    -> NeedsTerminal
   "next"     -> NextTerminal
-  "null"     -> NullTerminal
   "on"       -> OnTerminal
   "redo"     -> RedoTerminal
   "remove"   -> RemoveTerminal
   "return"   -> ReturnTerminal
   "set"      -> SetTerminal
-  "true"     -> TrueTerminal
   "until"    -> UntilTerminal
   "var"      -> VarTerminal
   "when"     -> WhenTerminal
   "whenever" -> WheneverTerminal
-  "where"    -> WhereTerminal
-  "which"    -> WhichTerminal
   "while"    -> WhileTerminal
 
   unknown    -> error $ "unknown token " ++ show unknown

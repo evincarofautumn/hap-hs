@@ -13,7 +13,9 @@ import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Semigroup (sconcat)
 import Data.Text (Text)
 import Hap.Language
-  ( Identifier(..)
+  ( BinaryOperator(..)
+  , Identifier(..)
+  , UnaryOperator(..)
   , bindingAnno
   , decimalDigitString
   , decimalFractionAnno
@@ -76,9 +78,11 @@ import qualified Hap.Token as Token
   ','  { Token.CommaToken              _ }
   '-'  { Token.MinusToken              _ }
   '->' { Token.RightArrowToken         _ }
+  '=>' { Token.RightDoubleArrowToken   _ }
   '.'  { Token.DotToken                _ }
   '/'  { Token.SlashToken              _ }
   ':'  { Token.ColonToken              _ }
+  ':=' { Token.ColonEqualToken         _ }
   ';'  { Token.SemicolonToken          _ }
   '<'  { Token.LessThanToken           _ }
   '<=' { Token.LessThanOrEqualToken    _ }
@@ -135,15 +139,6 @@ import qualified Hap.Token as Token
   remove   { Token.KeywordToken (_, RemoveKeyword)   }
   set      { Token.KeywordToken (_, SetKeyword)      }
 
-  -- Contextual keywords, which are only keywords when they appear alone.
-  every    { Token.KeywordToken (_, EveryKeyword)    }
-  false    { Token.KeywordToken (_, FalseKeyword)    }
-  in       { Token.KeywordToken (_, InKeyword)       }
-  null     { Token.KeywordToken (_, NullKeyword)     }
-  true     { Token.KeywordToken (_, TrueKeyword)     }
-  where    { Token.KeywordToken (_, WhereKeyword)    }
-  which    { Token.KeywordToken (_, WhichKeyword)    }
-
 --------------------------------------------------------------------------------
 -- Any Token (MUST BE LAST)
 --------------------------------------------------------------------------------
@@ -156,6 +151,17 @@ import qualified Hap.Token as Token
 
 %nonassoc NO_ELSE
 %nonassoc else
+
+%right ':='
+%right '->'
+%right '|'
+%right '&'
+-- TODO: Chained relations.
+%nonassoc '<' '>=' '>' '<=' '=' '<>' ':'
+%left '+' '-'
+%left '*' '/'
+%right UNARY_PREFIX
+%left UNARY_POSTFIX
 
 %%
 
@@ -325,33 +331,57 @@ Program :: { Program }
     : '=' Expression { $2 }
 
   Expression :: { Expression }
-    : Term                  { $1 }
-    | Expression CallSuffix { callExpression $1 $2 }
+    : Term   { $1 }
+    | Unary  { $1 }
+    | Binary { $1 }
+
+    Unary :: { Expression }
+      : '+'  Expression %prec UNARY_PREFIX { unaryOp UnaryPlus       $1 $2 }
+      | '-'  Expression %prec UNARY_PREFIX { unaryOp UnaryMinus      $1 $2 }
+      | '<'  Expression %prec UNARY_PREFIX { unaryOp UnaryLess       $1 $2 }
+      | '<=' Expression %prec UNARY_PREFIX { unaryOp UnaryNotGreater $1 $2 }
+      | '<>' Expression %prec UNARY_PREFIX { unaryOp UnaryNotEqual   $1 $2 }
+      | '='  Expression %prec UNARY_PREFIX { unaryOp UnaryEqual      $1 $2 }
+      | '>'  Expression %prec UNARY_PREFIX { unaryOp UnaryGreater    $1 $2 }
+      | '>=' Expression %prec UNARY_PREFIX { unaryOp UnaryNotLess    $1 $2 }
+      | '~'  Expression %prec UNARY_PREFIX { unaryOp UnaryNot        $1 $2 }
+
+    Binary :: { Expression }
+      : Expression '*'  Expression { binaryOp BinaryMultiply   $1 $2 $3 }
+      | Expression '/'  Expression { binaryOp BinaryDivide     $1 $2 $3 }
+      -- TODO: Modulus as context, not operation?
+      | Expression '+'  Expression { binaryOp BinaryAdd        $1 $2 $3 }
+      | Expression '-'  Expression { binaryOp BinarySubtract   $1 $2 $3 }
+      | Expression '<'  Expression { binaryOp BinaryLess       $1 $2 $3 }
+      | Expression '>=' Expression { binaryOp BinaryNotLess    $1 $2 $3 }
+      | Expression '>'  Expression { binaryOp BinaryGreater    $1 $2 $3 }
+      | Expression '<=' Expression { binaryOp BinaryNotGreater $1 $2 $3 }
+      | Expression '='  Expression { binaryOp BinaryEqual      $1 $2 $3 }
+      | Expression '<>' Expression { binaryOp BinaryNotEqual   $1 $2 $3 }
+      | Expression ':'  Expression { binaryOp BinaryElement    $1 $2 $3 }
+      | Expression '&'  Expression { binaryOp BinaryAnd        $1 $2 $3 }
+      | Expression '|'  Expression { binaryOp BinaryOr         $1 $2 $3 }
+      | Expression '->' Expression { binaryOp BinaryImplies    $1 $2 $3 }
+      -- TODO: Sort out equality operators.
+      | Expression ':=' Expression { binaryOp BinaryAssign     $1 $2 $3 }
 
     -- TODO: Preserve source spans of parentheses and separators?
     CallSuffix :: { [Expression] }
       : '(' sepEnd(',', Expression) ')' { $2 }
 
     Term :: { Expression }
-      : Boolean            { booleanExpression $1 }
-      | Identifier         { identifierExpression $1 }
+      : Identifier         { identifierExpression $1 }
       | List               { $1 }
       | Map                { $1 }
-      | Null               { nullExpression $1 }
       | Number             { $1 }
       | Set                { $1 }
       | Text               { $1 }
+      | Term CallSuffix    { callExpression $1 $2 }
       | '(' Expression ')' { groupExpression $1 $2 $3 }
-
-      Boolean :: { (SourceSpan, Bool) }
-        : true  { (tokenAnno $1, True) }
-        | false { (tokenAnno $1, False) }
 
       Identifier :: { (SourceSpan, Identifier) }
         : IdentifierStart many(IdentifierContinue)
         { identifierParts $1 $2 }
-        | ContextualKeyword some(IdentifierContinue)
-        { identifierParts $1 (NonEmpty.toList $2) }
 
         IdentifierStart :: { (SourceSpan, Text) }
           : word             { $1 }
@@ -361,7 +391,6 @@ Program :: { Program }
           : word              { $1 }
           | PrimaryKeyword    { $1 }
           | SecondaryKeyword  { $1 }
-          | ContextualKeyword { $1 }
           | digits            { identifierContinueDigits $1 }
 
       -- TODO: Preserve source spans of separators?
@@ -372,20 +401,18 @@ Program :: { Program }
       -- an empty set rather than an empty map.
       --
       -- TODO: Preserve source spans of separators?
+      -- TODO: Make map a set of key-value pairs with the '=>' kvp operator?
       Map :: { Expression }
         : '{' sepEnd1(',', KeyValuePair) '}' { mapExpression $1 $2 $3 }
 
         KeyValuePair :: { (Expression, Expression) }
-          : Key ':' Expression { ($1, $3) }
+          : Key '=>' Expression { ($1, $3) }
 
           Key :: { Expression }
             : Identifier         { identifierKey $1 }
             | Text               { $1 }
             -- TODO: Preserve source spans of parentheses.
             | '(' Expression ')' { $2 }
-
-      Null :: { SourceSpan }
-        : null  { tokenAnno $1 }
 
       Number :: { Expression }
         -- See note [Float Exponents].
@@ -477,16 +504,6 @@ SecondaryKeyword :: { (SourceSpan, Text) }
   | needs  { (tokenAnno $1, "needs")  }
   | remove { (tokenAnno $1, "remove") }
   | set    { (tokenAnno $1, "set")    }
-
--- A name that is only a keyword when it appears alone.
-ContextualKeyword :: { (SourceSpan, Text) }
-  : every { (tokenAnno $1, "every") }
-  | false { (tokenAnno $1, "false") }
-  | in    { (tokenAnno $1, "in")    }
-  | null  { (tokenAnno $1, "null")  }
-  | true  { (tokenAnno $1, "true")  }
-  | where { (tokenAnno $1, "where") }
-  | which { (tokenAnno $1, "which") }
 
 --------------------------------------------------------------------------------
 -- Grammar Utilities
@@ -901,10 +918,6 @@ binding (namePos, name) mSignature mInitializer = Language.Binding
 -- Expression
 --------------------------------------------------------------------------------
 
-booleanExpression :: (SourceSpan, Bool) -> Expression
-booleanExpression (pos, value)
-  = Language.LiteralExpression pos (Language.BooleanLiteral value)
-
 callExpression :: Expression -> [Expression] -> Expression
 callExpression function arguments
   = Language.CallExpression pos function arguments
@@ -1020,9 +1033,6 @@ mapExpression leftBrace keyValuePairs rightBrace
 identifierKey :: (SourceSpan, Identifier) -> Expression
 identifierKey = textExpression . fmap Language.identifierText
 
-nullExpression :: SourceSpan -> Expression
-nullExpression pos = Language.LiteralExpression pos Language.NullLiteral
-
 setExpression :: Token -> [Expression] -> Token -> Expression
 setExpression leftBrace elements rightBrace
   = Language.LiteralExpression pos
@@ -1058,5 +1068,26 @@ textSplices initialExpression splices
     splices
   where
     unpair (a, b) = [a, b]
+
+-- Operators
+
+binaryOp :: BinaryOperator -> Expression -> Token -> Expression -> Expression
+binaryOp operation leftOperand operator rightOperand
+  = Language.BinaryExpression pos operation leftOperand rightOperand
+  where
+    pos = mconcat
+      [ expressionAnno leftOperand
+      , tokenAnno operator
+      , expressionAnno rightOperand
+      ]
+
+unaryOp :: UnaryOperator -> Token -> Expression -> Expression
+unaryOp operation operator operand
+  = Language.UnaryExpression pos operation operand
+  where
+    pos = mconcat
+      [ tokenAnno operator
+      , expressionAnno operand
+      ]
 
 }

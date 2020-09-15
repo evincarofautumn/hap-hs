@@ -66,30 +66,23 @@ token :-
     "each"     -> KeywordToken (s, EachKeyword)
     "else"     -> KeywordToken (s, ElseKeyword)
     "entity"   -> KeywordToken (s, EntityKeyword)
-    "every"    -> KeywordToken (s, EveryKeyword)
-    "false"    -> KeywordToken (s, FalseKeyword)
     "for"      -> KeywordToken (s, ForKeyword)
     "function" -> KeywordToken (s, FunctionKeyword)
     "has"      -> KeywordToken (s, HasKeyword)
     "if"       -> KeywordToken (s, IfKeyword)
-    "in"       -> KeywordToken (s, InKeyword)
     "last"     -> KeywordToken (s, LastKeyword)
     "long"     -> KeywordToken (s, LongKeyword)
     "needs"    -> KeywordToken (s, NeedsKeyword)
     "next"     -> KeywordToken (s, NextKeyword)
-    "null"     -> KeywordToken (s, NullKeyword)
     "on"       -> KeywordToken (s, OnKeyword)
     "redo"     -> KeywordToken (s, RedoKeyword)
     "remove"   -> KeywordToken (s, RemoveKeyword)
     "return"   -> KeywordToken (s, ReturnKeyword)
     "set"      -> KeywordToken (s, SetKeyword)
-    "true"     -> KeywordToken (s, TrueKeyword)
     "until"    -> KeywordToken (s, UntilKeyword)
     "var"      -> KeywordToken (s, VarKeyword)
     "when"     -> KeywordToken (s, WhenKeyword)
     "whenever" -> KeywordToken (s, WheneverKeyword)
-    "where"    -> KeywordToken (s, WhereKeyword)
-    "which"    -> KeywordToken (s, WhichKeyword)
     "while"    -> KeywordToken (s, WhileKeyword)
     _          -> WordToken (s, Text.pack t)
   }
@@ -129,11 +122,13 @@ token :-
   "."           { spanned \ s _t -> DotToken s                }
   "/"           { spanned \ s _t -> SlashToken s              }
   ":"           { spanned \ s _t -> ColonToken s              }
+  ":="          { spanned \ s _t -> ColonEqualToken s         }
   ";"           { spanned \ s _t -> SemicolonToken s          }
   "<"           { spanned \ s _t -> LessThanToken s           }
   "<="          { spanned \ s _t -> LessThanOrEqualToken s    }
   "<>"          { spanned \ s _t -> NotEqualToken s           }
   "="           { spanned \ s _t -> EqualToken s              }
+  "=>"          { spanned \ s _t -> RightDoubleArrowToken s   }
   ">"           { spanned \ s _t -> GreaterThanToken s        }
   ">="          { spanned \ s _t -> GreaterThanOrEqualToken s }
   "?"           { spanned \ s _t -> QuestionToken s           }

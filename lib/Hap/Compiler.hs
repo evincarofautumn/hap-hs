@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
 
 module Hap.Compiler
@@ -11,7 +12,7 @@ import Control.Monad (void, when)
 import Control.Monad.IO.Class
 import Data.Fixed (mod')
 import Data.IORef
-import Data.List ((\\), foldl', intersect, union)
+import Data.List (foldl', intersect, union)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
 import Data.Traversable (for)
@@ -238,14 +239,27 @@ compileExpression context expression = case expression of
 -}
   IdentifierExpression _pos identifier -> do
     let readSymbols = contextReadSymbols context
-    pure do
-      symbols <- readSymbols
-      case Map.lookup identifier symbols of
-        Just cell -> get cell
-        Nothing -> case nativeId identifier of
-          Just native -> pure $ NativeValue native
-          -- TODO: Raise 'Unbound' Hap error.
-          Nothing -> error $ concat ["unbound name '", show identifier, "'"]
+    -- TODO: Proper name resolution.
+    case identifierText identifier of
+      "true"     -> pure $ pure $ BooleanValue True
+      "false"    -> pure $ pure $ BooleanValue True
+      "null"     -> pure $ pure NullValue
+      "all"      -> error "TODO: compile 'all' iteration operator"
+      "each"     -> error "TODO: compile 'each' iteration operator"
+      "every"    -> error "TODO: compile 'every' iteration operator"
+      "how many" -> error "TODO: compile 'how many' iteration operator"
+      "none"     -> error "TODO: compile 'none' iteration operator"
+      "some"     -> error "TODO: compile 'some' iteration operator"
+      "where"    -> error "TODO: compile 'where' iteration operator"
+      "which"    -> error "TODO: compile 'which' iteration operator"
+      _ -> pure do
+        symbols <- readSymbols
+        case Map.lookup identifier symbols of
+          Just cell -> get cell
+          Nothing -> case nativeId identifier of
+            Just native -> pure $ NativeValue native
+            -- TODO: Raise 'Unbound' Hap error.
+            Nothing -> error $ concat ["unbound name '", show identifier, "'"]
 {-
   SubscriptExpression !SourcePos !Expression [Expression]
   DotExpression !SourcePos !Expression !Identifier
@@ -287,6 +301,18 @@ compileExpression context expression = case expression of
           IntegerValue{} -> operandValue
           FloatValue{} -> operandValue
           _ -> error "argument of unary '+' not a number"
+        UnaryAll -> error "TODO: implement unary 'all'"
+        UnaryEqual -> error "TODO: implement unary '='"
+        UnaryLess -> error "TODO: implement unary '<'"
+        UnaryGreater -> error "TODO: implement unary '>'"
+        UnaryNotEqual -> error "TODO: implement unary '<>'"
+        UnaryNotLess -> error "TODO: implement unary '>='"
+        UnaryNotGreater -> error "TODO: implement unary '<='"
+        UnaryHowMany -> error "TODO: implement unary 'how many'"
+        UnaryNone -> error "TODO: implement unary 'none'"
+        UnarySome -> error "TODO: implement unary 'some'"
+        UnaryWhere -> error "TODO: implement unary 'where'"
+        UnaryWhich -> error "TODO: implement unary 'which'"
   BinaryExpression _pos operator first second -> do
     compiledFirst <- compileExpression context first
     compiledSecond <- compileExpression context second
@@ -451,6 +477,7 @@ compileExpression context expression = case expression of
           (TextValue a, TextValue b) -> pure $ BooleanValue $ a `Text.isInfixOf` b
           _ -> error "invalid argument to binary 'is in'"
 
+{-
       BinaryNotElement -> do
         firstValue <- compiledFirst
         secondValue <- compiledSecond
@@ -460,6 +487,7 @@ compileExpression context expression = case expression of
           (a, MapValue b) -> pure $ BooleanValue $ a `Map.notMember` b
           (TextValue a, TextValue b) -> pure $ BooleanValue $ not $ a `Text.isInfixOf` b
           _ -> error "invalid argument to binary 'is not in'"
+-}
 
       -- See note [Short-circuiting Operators].
       BinaryAnd -> do
@@ -502,6 +530,7 @@ compileExpression context expression = case expression of
               (SetValue a, SetValue b) -> pure $ SetValue $ a `Set.union` b
               _ -> error "invalid argument to binary 'or'"
 
+{-
       BinaryXor -> do
         firstValue <- compiledFirst
         secondValue <- compiledSecond
@@ -517,6 +546,7 @@ compileExpression context expression = case expression of
           (SetValue a, SetValue b) -> pure $ SetValue
             $ (a `Set.difference` b) `Set.union` (b `Set.difference` a)
           _ -> error "invalid argument to binary 'xor'"
+-}
 
       -- See note [Short-circuiting Operators].
       BinaryImplies -> do
