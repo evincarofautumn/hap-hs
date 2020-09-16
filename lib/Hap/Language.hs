@@ -928,7 +928,7 @@ instance Pretty Value where
     BooleanValue value -> if value then "true" else "false"
     FloatValue value -> pretty value
     IntegerValue value -> pretty value
-    TextValue value -> pretty value
+    TextValue value -> Pretty.dquotes $ pretty value
     NullValue -> "null"
     ListValue elements -> Pretty.brackets $ Pretty.hsep
       $ Pretty.punctuate Pretty.comma
