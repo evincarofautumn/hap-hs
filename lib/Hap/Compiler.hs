@@ -254,7 +254,7 @@ compileExpression context expression = case expression of
     -- TODO: Proper name resolution.
     case identifierText identifier of
       "true"     -> pure $ pure $ BooleanValue True
-      "false"    -> pure $ pure $ BooleanValue True
+      "false"    -> pure $ pure $ BooleanValue False
       "null"     -> pure $ pure NullValue
       "all"      -> error "TODO: compile 'all' iteration operator"
       "each"     -> error "TODO: compile 'each' iteration operator"
