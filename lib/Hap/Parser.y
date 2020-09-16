@@ -82,6 +82,7 @@ import qualified Hap.Token as Token
   '.'  { Token.DotToken                _ }
   '/'  { Token.SlashToken              _ }
   ':'  { Token.ColonToken              _ }
+  '::' { Token.ColonColonToken         _ }
   ':=' { Token.ColonEqualToken         _ }
   ';'  { Token.SemicolonToken          _ }
   '<'  { Token.LessThanToken           _ }
@@ -157,9 +158,10 @@ import qualified Hap.Token as Token
 %right '|'
 %right '&'
 -- TODO: Chained relations.
-%nonassoc '<' '>=' '>' '<=' '=' '<>' ':'
+%nonassoc '<' '>=' '>' '<=' '=' '<>' '?'
 %left '+' '-'
 %left '*' '/'
+%left '::' '_' CALL
 %right UNARY_PREFIX
 %left UNARY_POSTFIX
 
@@ -331,9 +333,9 @@ Program :: { Program }
     : '=' Expression { $2 }
 
   Expression :: { Expression }
-    : Term   { $1 }
-    | Unary  { $1 }
-    | Binary { $1 }
+    : Suffixed { $1 }
+    | Unary    { $1 }
+    | Binary   { $1 }
 
     Unary :: { Expression }
       : '+'  Expression %prec UNARY_PREFIX { unaryOp UnaryPlus       $1 $2 }
@@ -358,16 +360,23 @@ Program :: { Program }
       | Expression '<=' Expression { binaryOp BinaryNotGreater $1 $2 $3 }
       | Expression '='  Expression { binaryOp BinaryEqual      $1 $2 $3 }
       | Expression '<>' Expression { binaryOp BinaryNotEqual   $1 $2 $3 }
-      | Expression ':'  Expression { binaryOp BinaryElement    $1 $2 $3 }
+      | Expression '?'  Expression { binaryOp BinaryElement    $1 $2 $3 }
       | Expression '&'  Expression { binaryOp BinaryAnd        $1 $2 $3 }
       | Expression '|'  Expression { binaryOp BinaryOr         $1 $2 $3 }
       | Expression '->' Expression { binaryOp BinaryImplies    $1 $2 $3 }
       -- TODO: Sort out equality operators.
       | Expression ':=' Expression { binaryOp BinaryAssign     $1 $2 $3 }
 
-    -- TODO: Preserve source spans of parentheses and separators?
-    CallSuffix :: { [Expression] }
-      : '(' sepEnd(',', Expression) ')' { $2 }
+    Suffixed :: { Expression }
+      : Term                     { $1                           }
+      | Suffixed CallSuffix      { callExpression      $1 $2    }
+      -- TODO: Replace ':' for types/quantifiers and use it for member lookup.
+      | Suffixed '::' Identifier { memberExpression    $1 $2 $3 }
+      | Suffixed '_' Term        { subscriptExpression $1 $2 $3 }
+
+      -- TODO: Preserve source spans of parentheses and separators?
+      CallSuffix :: { [Expression] }
+        : '(' sepEnd(',', Expression) ')' { $2 }
 
     Term :: { Expression }
       : Identifier         { identifierExpression $1 }
@@ -376,7 +385,6 @@ Program :: { Program }
       | Number             { $1 }
       | Set                { $1 }
       | Text               { $1 }
-      | Term CallSuffix    { callExpression $1 $2 }
       | '(' Expression ')' { groupExpression $1 $2 $3 }
 
       Identifier :: { (SourceSpan, Identifier) }
@@ -927,6 +935,17 @@ callExpression function arguments
       , foldMap expressionAnno arguments
       ]
 
+memberExpression
+  :: Expression -> Token -> (SourceSpan, Identifier) -> Expression
+memberExpression expression operator (namePos, name)
+  = Language.MemberExpression pos expression name
+  where
+    pos = mconcat
+      [ expressionAnno expression
+      , tokenAnno operator
+      , namePos
+      ]
+
 groupExpression :: Token -> Expression -> Token -> Expression
 groupExpression leftParenthesis body rightParenthesis
   = Language.GroupExpression pos body
@@ -1054,6 +1073,16 @@ spliceExpression leftText@(leftTextPos, _) splices rightText@(rightTextPos, _)
       [ leftTextPos
       , foldMap spliceAnno splices
       , rightTextPos
+      ]
+
+subscriptExpression :: Expression -> Token -> Expression -> Expression
+subscriptExpression expression operator subscript
+  = Language.SubscriptExpression pos expression subscript
+  where
+    pos = mconcat
+      [ expressionAnno expression
+      , tokenAnno operator
+      , expressionAnno subscript
       ]
 
 textExpression :: (SourceSpan, Text) -> Expression

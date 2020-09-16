@@ -150,6 +150,9 @@ data Token anno
   -- | @:@
   | ColonToken anno
 
+  -- | @::@
+  | ColonColonToken anno
+
   -- | @:=@
   | ColonEqualToken anno
 
@@ -235,6 +238,7 @@ instance Pretty (Token anno) where
     DotToken{}                     -> "."
     SlashToken{}                   -> "/"
     ColonToken{}                   -> ":"
+    ColonColonToken{}              -> "::"
     ColonEqualToken{}              -> ":="
     SemicolonToken{}               -> ";"
     LessThanToken{}                -> "<"
@@ -377,6 +381,7 @@ tokenAnno = \ case
   DotToken                anno      -> anno
   SlashToken              anno      -> anno
   ColonToken              anno      -> anno
+  ColonColonToken         anno      -> anno
   ColonEqualToken         anno      -> anno
   SemicolonToken          anno      -> anno
   LessThanToken           anno      -> anno

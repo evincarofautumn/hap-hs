@@ -122,6 +122,7 @@ token :-
   "."           { spanned \ s _t -> DotToken s                }
   "/"           { spanned \ s _t -> SlashToken s              }
   ":"           { spanned \ s _t -> ColonToken s              }
+  "::"          { spanned \ s _t -> ColonColonToken s         }
   ":="          { spanned \ s _t -> ColonEqualToken s         }
   ";"           { spanned \ s _t -> SemicolonToken s          }
   "<"           { spanned \ s _t -> LessThanToken s           }

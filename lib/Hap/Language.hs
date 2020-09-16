@@ -158,8 +158,8 @@ data Binding anno = Binding
 data Expression anno
   = LiteralExpression anno !(Literal anno)
   | IdentifierExpression anno !Identifier
-  | SubscriptExpression anno !(Expression anno) [Expression anno]
-  | DotExpression anno !(Expression anno) !Identifier
+  | SubscriptExpression anno !(Expression anno) !(Expression anno)
+  | MemberExpression anno !(Expression anno) !Identifier
   | CallExpression anno !(Expression anno) [Expression anno]
   | LetExpression anno
     [(Identifier, Maybe (Signature anno), (Expression anno))]
@@ -176,7 +176,7 @@ expressionAnno = \ case
   LiteralExpression    anno _     -> anno
   IdentifierExpression anno _     -> anno
   SubscriptExpression  anno _ _   -> anno
-  DotExpression        anno _ _   -> anno
+  MemberExpression     anno _ _   -> anno
   CallExpression       anno _ _   -> anno
   LetExpression        anno _ _   -> anno
   GroupExpression      anno _     -> anno

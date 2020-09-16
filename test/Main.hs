@@ -730,7 +730,7 @@ spec = do
             _ -> False
 
         specify "subscript" do
-          parseTest "[1, 2][0];" \ program -> case program of
+          parseTest "[1, 2]_0;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (SubscriptExpression _
@@ -739,28 +739,29 @@ spec = do
                       [ LiteralExpression _ (IntegerLiteral 1)
                       , LiteralExpression _ (IntegerLiteral 2)
                       ]))
-                  [LiteralExpression _ (IntegerLiteral 0)])
-              ]) -> True
-            _ -> False
-
-        specify "multidimensional subscript" do
-          parseTest "[1, 2][0, 1];" \ program -> case program of
-            Right (Program
-              [ ExpressionStatement _
-                (SubscriptExpression _
-                  (LiteralExpression _
-                    (ListLiteral
-                      [ LiteralExpression _ (IntegerLiteral 1)
-                      , LiteralExpression _ (IntegerLiteral 2)
-                      ]))
-                  [ LiteralExpression _ (IntegerLiteral 0)
-                  , LiteralExpression _ (IntegerLiteral 1)
-                  ])
+                  (LiteralExpression _ (IntegerLiteral 0)))
               ]) -> True
             _ -> False
 
         specify "multiple subscripts" do
-          parseTest "[[1, 2]][0][1];" \ program -> case program of
+          parseTest "[1, 2]_[1, 0];" \ program -> case program of
+            Right (Program
+              [ ExpressionStatement _
+                (SubscriptExpression _
+                  (LiteralExpression _
+                    (ListLiteral
+                      [ LiteralExpression _ (IntegerLiteral 1)
+                      , LiteralExpression _ (IntegerLiteral 2)
+                      ]))
+                  (LiteralExpression _ (ListLiteral
+                    [ LiteralExpression _ (IntegerLiteral 1)
+                    , LiteralExpression _ (IntegerLiteral 0)
+                    ])))
+              ]) -> True
+            _ -> False
+
+        specify "chained subscripts" do
+          parseTest "[[1, 2]]_0_1;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (SubscriptExpression _
@@ -773,39 +774,39 @@ spec = do
                             , LiteralExpression _ (IntegerLiteral 2)
                             ]))
                         ]))
-                    [LiteralExpression _ (IntegerLiteral 0)])
-                  [LiteralExpression _ (IntegerLiteral 1)])
+                    (LiteralExpression _ (IntegerLiteral 0)))
+                  (LiteralExpression _ (IntegerLiteral 1)))
               ]) -> True
             _ -> False
 
-        specify "dot" do
-          parseTest "foo.bar;" \ program -> case program of
+        specify "member" do
+          parseTest "foo::bar;" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
-                (DotExpression _
+                (MemberExpression _
                   (IdentifierExpression _ "foo")
                   "bar")
               ]) -> True
             _ -> False
 
-        specify "dot call (0 arguments)" do
-          parseTest "foo.bar();" \ program -> case program of
+        specify "member call (0 arguments)" do
+          parseTest "foo::bar();" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (CallExpression _
-                  (DotExpression _
+                  (MemberExpression _
                     (IdentifierExpression _ "foo")
                     "bar")
                   [])
               ]) -> True
             _ -> False
 
-        specify "dot call (1 argument)" do
-          parseTest "foo.bar(baz);" \ program -> case program of
+        specify "member call (1 argument)" do
+          parseTest "foo::bar(baz);" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (CallExpression _
-                  (DotExpression _
+                  (MemberExpression _
                     (IdentifierExpression _ "foo")
                     "bar")
                   [ IdentifierExpression _ "baz"
@@ -813,12 +814,12 @@ spec = do
               ]) -> True
             _ -> False
 
-        specify "dot call (multiple arguments)" do
-          parseTest "foo.bar(baz, quux);" \ program -> case program of
+        specify "member call (multiple arguments)" do
+          parseTest "foo::bar(baz, quux);" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (CallExpression _
-                  (DotExpression _
+                  (MemberExpression _
                     (IdentifierExpression _ "foo")
                     "bar")
                   [ IdentifierExpression _ "baz"
@@ -828,16 +829,15 @@ spec = do
             _ -> False
 
         specify "call after subscript" do
-          parseTest "foo.bar[0](\"baz\");" \ program -> case program of
+          parseTest "foo::bar_0(\"baz\");" \ program -> case program of
             Right (Program
               [ ExpressionStatement _
                 (CallExpression _
                   (SubscriptExpression _
-                    (DotExpression _
+                    (MemberExpression _
                       (IdentifierExpression _ "foo")
                       "bar")
-                    [ LiteralExpression _ (IntegerLiteral 0)
-                    ])
+                    (LiteralExpression _ (IntegerLiteral 0)))
                   [LiteralExpression _ (TextLiteral "baz")])
               ]) -> True
             _ -> False
@@ -1106,12 +1106,12 @@ spec = do
     describe "'after' statement" do
 
       specify "basic" do
-        parseTest "after (player.score = 0) {\n\ttrace(\"You lost!\");\n}"
+        parseTest "after (player::score = 0) {\n\ttrace(\"You lost!\");\n}"
           \ program -> case program of
           Right (Program
             [ AfterStatement _
               (BinaryExpression _ BinaryEqual
-                (DotExpression _
+                (MemberExpression _
                   (IdentifierExpression _ "player")
                   "score")
                 (LiteralExpression _ (IntegerLiteral 0)))
@@ -1125,12 +1125,12 @@ spec = do
     describe "'as long as' statement" do
 
       specify "basic" do
-        parseTest "as long as (player.x < 0) {\n\tout of bounds();\n}"
+        parseTest "as long as (player::x < 0) {\n\tout of bounds();\n}"
           \ program -> case program of
           Right (Program
             [ AsLongAsStatement _
               (BinaryExpression _ BinaryLess
-                (DotExpression _
+                (MemberExpression _
                   (IdentifierExpression _ "player")
                   "x")
                 (LiteralExpression _ (IntegerLiteral 0)))
