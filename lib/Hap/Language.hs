@@ -34,7 +34,8 @@ module Hap.Language
 import Control.Concurrent.STM (atomically, writeTChan)
 import Control.Monad (join)
 import Control.Monad.IO.Class (MonadIO(..))
-import Data.Foldable (for_, traverse_)
+import Data.Foldable (traverse_)
+import Data.Functor ((<&>))
 import Data.IntMap (IntMap)
 import Data.List (intercalate)
 import Data.List.NonEmpty (NonEmpty)
@@ -930,18 +931,30 @@ instance Pretty Value where
     IntegerValue value -> pretty value
     TextValue value -> Pretty.dquotes $ pretty value
     NullValue -> "null"
+    -- TODO: Proper handling of indentation & whitespace when pretty-printing
+    -- container literals.
     ListValue elements -> Pretty.brackets $ Pretty.hsep
       $ Pretty.punctuate Pretty.comma
       $ pretty <$> elements
-    MapValue pairs -> Pretty.braces $ Pretty.hsep
-      $ Pretty.punctuate Pretty.comma
-      $ prettyPair <$> Map.toList pairs
+    MapValue pairs
+      | Map.null pairs -> Pretty.lbrace <> Pretty.rbrace
+      | otherwise -> Pretty.hsep $ concat
+        [ [Pretty.lbrace]
+        , Pretty.punctuate Pretty.comma
+          $ prettyPair <$> Map.toList pairs
+        , [Pretty.rbrace]
+        ]
       where
         prettyPair (key, value)
           = Pretty.hsep [pretty key, "=>", pretty value]
-    SetValue elements -> Pretty.braces $ Pretty.hsep
-      $ Pretty.punctuate Pretty.comma
-      $ pretty <$> Set.toList elements
+    SetValue elements
+      | Set.null elements -> Pretty.lbrace <> Pretty.rbrace
+      | otherwise -> Pretty.hsep $ concat
+        [ [Pretty.lbrace]
+        , Pretty.punctuate Pretty.comma
+          $ pretty <$> Set.toList elements
+        , [Pretty.rbrace]
+        ]
     NativeValue n -> pretty $ nativeName n
 {-
     FunctionValue name parameters result body _compiled -> concat
@@ -978,12 +991,17 @@ type NativeFunction m = Env m -> [Value] -> m Value
 native :: (MonadIO m) => [(Identifier, NativeFunction m)]
 native =
   [ (,) "output" \ env args -> do
-    for_ args $ envOutputStr env . \ case
-      TextValue text -> Text.unpack text
-      arg -> show arg
+    envOutputStr env . show . Pretty.hcat $ args <&> \ case
+      TextValue text -> pretty text
+      arg -> pretty arg
+    pure NullValue
+  , (,) "output line" \ env args -> do
+    envOutputStr env . (<> "\n") . show . Pretty.hcat $ args <&> \ case
+      TextValue text -> pretty text
+      arg -> pretty arg
     pure NullValue
   , (,) "trace" \ env args -> do
-    traverse_ (envOutputStr env . (++ "\n") . show . pretty) args
+    traverse_ (envOutputStr env . (<> "\n") . show . pretty) args
     pure NullValue
   , (,) "graphics_background_set" \ env args -> case args of
     [IntegerValue r, IntegerValue g, IntegerValue b] -> case envGraphicsChan env of

@@ -1668,20 +1668,22 @@ spec = do
         evalTest "trace ([1, 2, 3]);" (== "[1, 2, 3]\n")
 
       specify "empty" do
-        evalTest "trace ({});" (== "{  }\n")
+        evalTest "trace ({});" (== "{}\n")
 
       specify "map" do
-        evalTest "trace ({ thing1: \"text\", thing2: 20 });" (== "{ \"thing1\": \"text\", \"thing2\": 20 }\n")
+        evalTest "trace ({ thing1 => \"text\", thing2 => 20 });"
+          (== "{ \"thing1\" => \"text\", \"thing2\" => 20 }\n")
 
       specify "set" do
-        evalTest "trace ({ \"red\", \"green\", \"blue\" });" (== "{ \"blue\", \"green\", \"red\" }\n")
+        evalTest "trace ({ \"red\", \"green\", \"blue\" });"
+          (== "{ \"blue\", \"green\", \"red\" }\n")
 
     describe "'on set' statement" do
 
       specify "single" do
         evalTest "\
           \var x = 0;\n\
-          \on set (x) { output (\"x was set to \", x, \"\\n\"); }\n\
+          \on set (x) { output line (\"x was set to \", x); }\n\
           \x := 0;\n\
           \x := 1;\n\
           \x := 0;\n\
@@ -1697,7 +1699,7 @@ spec = do
       specify "single" do
         evalTest "\
           \var x = 0;\n\
-          \on change (x) { output (\"x was changed to \", x, \"\\n\"); }\n\
+          \on change (x) { output line (\"x was changed to \", x); }\n\
           \x := 0;\n\
           \x := 1;\n\
           \x := 0;\n\
@@ -1712,7 +1714,7 @@ spec = do
       specify "basic" do
         evalTest "\
          \var x = 1;\n\
-         \whenever (x = 2) { output (\"beep\\n\"); }\n\
+         \whenever (x = 2) { output line (\"beep\"); }\n\
          \x := 3;\n\
          \x := 2;\n\
          \x := 3;\n\
