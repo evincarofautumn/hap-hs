@@ -15,6 +15,7 @@ import Data.IORef
 import Data.List (foldl', intersect, union)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Hap.Language
 import Hap.Runtime
@@ -208,7 +209,18 @@ compileExpression context expression = case expression of
           Nothing -> error
             "internal error: non-digits in decimal integer literal"
     DecimalFloatLiteral float
-      -> error "TODO: compile float literal" -- pure $ pure $ FloatValue value
+      -> pure $ pure $ FloatValue value
+      where
+        digits = mconcat
+          [ fromMaybe "0" $ decimalIntegerString <$> decimalFloatInteger float
+          , "."
+          , decimalIntegerString $ DecimalInteger $ decimalFractionDigits
+            $ decimalFloatFraction float
+          ]
+        value = case readMaybe digits of
+          Just x -> x
+          Nothing -> error
+            "internal error: invalid floating-point literal"
     ListLiteral elements -> do
       compiledElements <- traverse (compileExpression context) elements
       pure do
