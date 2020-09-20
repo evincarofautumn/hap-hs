@@ -1,5 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 module Hap.Compiler
   ( SymbolMap
@@ -12,11 +12,15 @@ import Control.Monad (void, when)
 import Control.Monad.IO.Class
 import Data.Fixed (mod')
 import Data.IORef
-import Data.List ((\\), foldl', intersect, union)
+import Data.List (foldl', intersect, union)
+import Data.List.NonEmpty (NonEmpty)
 import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import Data.Traversable (for)
 import Hap.Language
 import Hap.Runtime
+import Text.Read (readMaybe)
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as Text
@@ -36,13 +40,22 @@ newEmptyContext = do
     , contextReadSymbols = liftIO $ readIORef symbols
     }
 
-compile :: (MonadIO m) => Context m -> Program -> Either CompileError (HapT m ())
+compile
+  :: (MonadIO m, Show anno)
+  => Context m
+  -> Program anno
+  -> Either CompileError (HapT m ())
 compile context (Program statements)
   = fmap sequence_ (traverse (compileStatement context) statements)
 
 type CompileError = String
 
-compileStatement :: forall m. (MonadIO m) => Context m -> Statement -> Either CompileError (HapT m ())
+compileStatement
+  :: forall m anno
+  . (MonadIO m, Show anno)
+  => Context m
+  -> Statement anno
+  -> Either CompileError (HapT m ())
 compileStatement context statement = case statement of
 {-
   AtomicStatement !SourcePos !Statement
@@ -78,8 +91,10 @@ compileStatement context statement = case statement of
   LastStatement !SourcePos !(Maybe Identifier)
   NextStatement !SourcePos !(Maybe Identifier)
 -}
-  OnChangeStatement pos vars body -> compileOnStatement context onChange pos vars body
-  OnSetStatement pos vars body -> compileOnStatement context onSet pos vars body
+  OnChangeStatement pos vars body
+    -> compileOnStatement context onChange pos vars body
+  OnSetStatement pos vars body
+    -> compileOnStatement context onSet pos vars body
 {-
   -- OnAddStatement !Identifier !Identifier !Statement
   -- OnRemoveStatement !Identifier !Identifier !Statement
@@ -99,31 +114,43 @@ compileStatement context statement = case statement of
     where
 
       compileBinding
-        :: (Identifier, Maybe Signature, Maybe Expression)
-        -> Either CompileError (Identifier, Maybe Signature, Maybe (HapT m Value))
-      compileBinding (identifier, signature, initializer) = case initializer of
-        Just expression -> do
-          compiledExpression <- compileExpression context expression
-          pure (identifier, signature, Just compiledExpression)
-        Nothing -> do
-          pure (identifier, signature, Nothing)
+        :: Binding anno
+        -> Either CompileError (CompiledBinding m anno)
+      compileBinding Binding
+        { bindingAnno
+        , bindingName
+        , bindingSignature
+        , bindingInitializer
+        }
+        = do
+          compiledExpression <- for bindingInitializer
+            $ compileExpression context
+          pure CompiledBinding
+            { compiledBindingAnno        = bindingAnno
+            , compiledBindingName        = bindingName
+            , compiledBindingSignature   = bindingSignature
+            , compiledBindingInitializer = compiledExpression
+            }
 
       runInitializer
-        :: (Identifier, Maybe Signature, Maybe (HapT m Value))
+        :: CompiledBinding m anno
         -> HapT m (Identifier, Cell m Value)
-      runInitializer (identifier, signature, initializer) = case initializer of
-        Just expression -> do
-          value <- expression
-          sequencePoint
-          -- FIXME: This copies the current value of the initializer; should it
-          -- generate a reactive binding instead? I.e., after "var x = y", if
-          -- 'y' changes, should 'x' change accordingly?
-          cell <- new (Just $ Text.unpack $ identifierText identifier) $ pure value
-          -- TODO: Check value against type signature.
-          pure (identifier, cell)
-        Nothing -> do
-          cell <- new (Just $ Text.unpack $ identifierText identifier) $ pure NullValue
-          pure (identifier, cell)
+      runInitializer CompiledBinding
+        { compiledBindingName
+        , compiledBindingInitializer
+        } = do
+        -- FIXME: This copies the current value of the initializer; should it
+        -- generate a reactive binding instead? I.e., after "var x = y", if 'y'
+        -- changes, should 'x' change accordingly?
+        value <- case compiledBindingInitializer of
+          Just expression -> expression <* sequencePoint
+          Nothing -> pure NullValue
+        -- TODO: Check value against type signature.
+        cell <- new (Just nameString) $ pure value
+        pure (compiledBindingName, cell)
+        where
+          -- TODO: Avoid unpacking text.
+          nameString = Text.unpack $ identifierText compiledBindingName
 
   WheneverStatement _pos condition body -> do
     compiledCondition <- compileExpression context condition
@@ -137,13 +164,20 @@ compileStatement context statement = case statement of
 -}
   _ -> Left $ "TODO: compile statement: " ++ show statement
 
+data CompiledBinding m anno = CompiledBinding
+  { compiledBindingAnno        :: anno
+  , compiledBindingName        :: !Identifier
+  , compiledBindingSignature   :: !(Maybe (Signature anno))
+  , compiledBindingInitializer :: !(Maybe (HapT m Value))
+  }
+
 compileOnStatement
-  :: (MonadIO m)
+  :: (MonadIO m, Show anno)
   => Context m
   -> ([Cell m Value] -> HapT m () -> HapT m a)
-  -> SourcePos
-  -> [Identifier]
-  -> Statement
+  -> anno
+  -> NonEmpty Identifier
+  -> Statement anno
   -> Either CompileError (HapT m ())
 compileOnStatement context statement pos vars body = do
   let readSymbols = contextReadSymbols context
@@ -154,17 +188,39 @@ compileOnStatement context statement pos vars body = do
       Just cell -> pure cell
       -- TODO: Raise 'Unbound' Hap error.
       Nothing -> error $ concat ["unbound name '", show var, "'"]
-    void $ statement cells compiledBody
+    void $ statement (NonEmpty.toList cells) compiledBody
     pure ()
 
-compileExpression :: (MonadIO m) => Context m -> Expression -> Either CompileError (HapT m Value)
+compileExpression
+  :: (MonadIO m, Show anno)
+  => Context m
+  -> Expression anno
+  -> Either CompileError (HapT m Value)
 compileExpression context expression = case expression of
   LiteralExpression _pos literal -> case literal of
     BooleanLiteral value -> pure $ pure $ BooleanValue value
-    FloatLiteral value -> pure $ pure $ FloatValue value
-    IntegerLiteral value -> pure $ pure $ IntegerValue value
-    TextLiteral value -> pure $ pure $ TextValue value
-    NullLiteral -> pure $ pure NullValue
+    DecimalIntegerLiteral integer
+      -> pure $ pure $ IntegerValue value
+      where
+        digits = decimalIntegerString integer
+        value = case readMaybe digits of
+          Just x -> x
+          -- TODO: Use proper error reporting or remove partiality.
+          Nothing -> error
+            "internal error: non-digits in decimal integer literal"
+    DecimalFloatLiteral float
+      -> pure $ pure $ FloatValue value
+      where
+        digits = mconcat
+          [ fromMaybe "0" $ decimalIntegerString <$> decimalFloatInteger float
+          , "."
+          , decimalIntegerString $ DecimalInteger $ decimalFractionDigits
+            $ decimalFloatFraction float
+          ]
+        value = case readMaybe digits of
+          Just x -> x
+          Nothing -> error
+            "internal error: invalid floating-point literal"
     ListLiteral elements -> do
       compiledElements <- traverse (compileExpression context) elements
       pure do
@@ -180,11 +236,14 @@ compileExpression context expression = case expression of
           <$> compileExpression context key
           <*> compileExpression context value
         evalPair (key, value) = (,) <$> key <*> value
+    NullLiteral -> pure $ pure NullValue
     SetLiteral elements -> do
       compiledElements <- traverse (compileExpression context) elements
       pure do
         elementValues <- sequence compiledElements
         pure $ SetValue $ Set.fromList elementValues
+    TextLiteral value -> pure $ pure $ TextValue value
+
 {-
     FunctionLiteral name parameters result body -> do
       compiledBody <- compileStatement context body
@@ -192,14 +251,27 @@ compileExpression context expression = case expression of
 -}
   IdentifierExpression _pos identifier -> do
     let readSymbols = contextReadSymbols context
-    pure do
-      symbols <- readSymbols
-      case Map.lookup identifier symbols of
-        Just cell -> get cell
-        Nothing -> case nativeId identifier of
-          Just native -> pure $ NativeValue native
-          -- TODO: Raise 'Unbound' Hap error.
-          Nothing -> error $ concat ["unbound name '", show identifier, "'"]
+    -- TODO: Proper name resolution.
+    case identifierText identifier of
+      "true"     -> pure $ pure $ BooleanValue True
+      "false"    -> pure $ pure $ BooleanValue False
+      "null"     -> pure $ pure NullValue
+      "all"      -> error "TODO: compile 'all' iteration operator"
+      "each"     -> error "TODO: compile 'each' iteration operator"
+      "every"    -> error "TODO: compile 'every' iteration operator"
+      "how many" -> error "TODO: compile 'how many' iteration operator"
+      "none"     -> error "TODO: compile 'none' iteration operator"
+      "some"     -> error "TODO: compile 'some' iteration operator"
+      "where"    -> error "TODO: compile 'where' iteration operator"
+      "which"    -> error "TODO: compile 'which' iteration operator"
+      _ -> pure do
+        symbols <- readSymbols
+        case Map.lookup identifier symbols of
+          Just cell -> get cell
+          Nothing -> case nativeId identifier of
+            Just native -> pure $ NativeValue native
+            -- TODO: Raise 'Unbound' Hap error.
+            Nothing -> error $ concat ["unbound name '", show identifier, "'"]
 {-
   SubscriptExpression !SourcePos !Expression [Expression]
   DotExpression !SourcePos !Expression !Identifier
@@ -241,6 +313,18 @@ compileExpression context expression = case expression of
           IntegerValue{} -> operandValue
           FloatValue{} -> operandValue
           _ -> error "argument of unary '+' not a number"
+        UnaryAll -> error "TODO: implement unary 'all'"
+        UnaryEqual -> error "TODO: implement unary '='"
+        UnaryLess -> error "TODO: implement unary '<'"
+        UnaryGreater -> error "TODO: implement unary '>'"
+        UnaryNotEqual -> error "TODO: implement unary '<>'"
+        UnaryNotLess -> error "TODO: implement unary '>='"
+        UnaryNotGreater -> error "TODO: implement unary '<='"
+        UnaryHowMany -> error "TODO: implement unary 'how many'"
+        UnaryNone -> error "TODO: implement unary 'none'"
+        UnarySome -> error "TODO: implement unary 'some'"
+        UnaryWhere -> error "TODO: implement unary 'where'"
+        UnaryWhich -> error "TODO: implement unary 'which'"
   BinaryExpression _pos operator first second -> do
     compiledFirst <- compileExpression context first
     compiledSecond <- compileExpression context second
@@ -405,6 +489,7 @@ compileExpression context expression = case expression of
           (TextValue a, TextValue b) -> pure $ BooleanValue $ a `Text.isInfixOf` b
           _ -> error "invalid argument to binary 'is in'"
 
+{-
       BinaryNotElement -> do
         firstValue <- compiledFirst
         secondValue <- compiledSecond
@@ -414,6 +499,7 @@ compileExpression context expression = case expression of
           (a, MapValue b) -> pure $ BooleanValue $ a `Map.notMember` b
           (TextValue a, TextValue b) -> pure $ BooleanValue $ not $ a `Text.isInfixOf` b
           _ -> error "invalid argument to binary 'is not in'"
+-}
 
       -- See note [Short-circuiting Operators].
       BinaryAnd -> do
@@ -456,6 +542,7 @@ compileExpression context expression = case expression of
               (SetValue a, SetValue b) -> pure $ SetValue $ a `Set.union` b
               _ -> error "invalid argument to binary 'or'"
 
+{-
       BinaryXor -> do
         firstValue <- compiledFirst
         secondValue <- compiledSecond
@@ -471,6 +558,7 @@ compileExpression context expression = case expression of
           (SetValue a, SetValue b) -> pure $ SetValue
             $ (a `Set.difference` b) `Set.union` (b `Set.difference` a)
           _ -> error "invalid argument to binary 'xor'"
+-}
 
       -- See note [Short-circuiting Operators].
       BinaryImplies -> do

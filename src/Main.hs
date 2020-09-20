@@ -17,8 +17,8 @@ import Data.Foldable (traverse_)
 import Data.List (stripPrefix)
 import Data.Maybe (fromMaybe)
 import Hap.Compiler (Context, compile, newEmptyContext)
-import Hap.Language (parseProgram)
 import Hap.Runtime (Env(..), Flag(..), newEmptyEnv, run)
+import Hap.ParserWrapper (parseProgram)
 import Options.Applicative.Arrows (asA, runA)
 import System.Console.Haskeline (InputT, getInputLine, outputStrLn, runInputT)
 import System.Exit (ExitCode(..), exitWith)
@@ -271,6 +271,7 @@ newRepl flags = do
                   Right compiled -> do
                     run env compiled
                 loop
+
   pure (context, env, runInputT Haskeline.defaultSettings loop)
 
 exit :: Int -> IO a
